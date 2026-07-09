@@ -1,0 +1,10 @@
+venv/
+.env
+__pycache__/
+*.pyc
+exported_excel/
+Rapports/
+*.sql
+*.xlsx
+*.csv
+.vscode/
