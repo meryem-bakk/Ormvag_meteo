@@ -8,6 +8,8 @@ from app.views.import_page import ImportPage
 from app.views.indicateurs_page import IndicateursPage
 from app.views.rapports_page import RapportsPage
 from app.views.parametres_page import ParametresPage
+from app.utils.event_bus import event_bus
+from datetime import datetime
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -60,6 +62,7 @@ class MainWindow(QMainWindow):
             "Paramètres",
         ]
 
+        self.pages_refs = {}
         for nom_page in pages_navigation:
             bouton = QPushButton(nom_page)
             bouton.setCursor(Qt.PointingHandCursor)
@@ -88,9 +91,16 @@ class MainWindow(QMainWindow):
                 page = RapportsPage()
             elif nom_page == "Paramètres":
                 page = ParametresPage(self.utilisateur)
+                self.pages_refs[nom_page] = page
             else:
                 page = self._creer_page_vide(nom_page)
             self.pages.addWidget(page)
+        self.label_derniere_maj = QLabel("Dernière mise à jour auto : jamais")
+        self.label_derniere_maj.setStyleSheet("color: #85a9c4; font-size: 10px; padding: 4px 16px;")
+        self.label_derniere_maj.setWordWrap(True)
+        layout_sidebar.addWidget(self.label_derniere_maj)
+
+        event_bus.donnees_mises_a_jour.connect(self._rafraichir_toutes_les_pages)
 
         layout_sidebar.addStretch()
 
@@ -103,6 +113,18 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(conteneur)
         self._changer_page(0, self.boutons_sidebar[0])
+    
+    def _rafraichir_toutes_les_pages(self):
+        for nom_page, page in self.pages_refs.items():
+            if hasattr(page, "rafraichir_donnees"):
+                try:
+                    page.rafraichir_donnees()
+                except Exception as e:
+                    print(f"Erreur lors du rafraîchissement de la page '{nom_page}' : {e}")
+
+        self.label_derniere_maj.setText(
+            f"Dernière mise à jour auto : {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        )
 
     def _changer_page(self, index, bouton):
         self.pages.setCurrentIndex(index)

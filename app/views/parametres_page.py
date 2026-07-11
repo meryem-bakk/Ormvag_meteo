@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 import bcrypt
+from dotenv import find_dotenv, set_key
 from app.database import SessionLocal
 from app.models.user import User
 
@@ -30,6 +31,7 @@ class ParametresPage(QWidget):
         layout.addWidget(titre)
 
         layout.addWidget(self._bloc_mon_compte())
+        layout.addWidget(self._bloc_notifications())
         layout.addWidget(self._bloc_sauvegarde())
         layout.addStretch()
 
@@ -136,7 +138,78 @@ class ParametresPage(QWidget):
         self.label_statut_mdp.setStyleSheet("color: #27ae60; font-size: 12px;")
         self.label_statut_mdp.setText("Mot de passe changé avec succès.")
 
-    # --- Bloc 2 : Sauvegarde de la base de données ---
+    # --- Bloc 2 : Notifications par email ---
+    def _bloc_notifications(self):
+        bloc = QFrame()
+        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
+        bloc.setGraphicsEffect(self._ombre_legere())
+        layout = QVBoxLayout(bloc)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+
+        titre = QLabel("Notifications par email")
+        titre.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
+        layout.addWidget(titre)
+
+        description = QLabel(
+            "Adresse(s) qui reçoivent le rapport météorologique automatique de 6h ainsi que "
+            "les rapports envoyés manuellement depuis la page Rapports. "
+            "Plusieurs adresses peuvent être séparées par une virgule."
+        )
+        description.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        layout.addWidget(QLabel("Destinataire(s)"))
+        self.champ_destinataires = QLineEdit()
+        self.champ_destinataires.setPlaceholderText("exemple@domaine.com, autre@domaine.com")
+        self.champ_destinataires.setText(os.getenv("SMTP_DESTINATAIRES", ""))
+        self.champ_destinataires.setStyleSheet(self._style_champ())
+        layout.addWidget(self.champ_destinataires)
+
+        self.label_statut_email = QLabel("")
+        self.label_statut_email.setStyleSheet("font-size: 12px;")
+        layout.addWidget(self.label_statut_email)
+
+        bouton = QPushButton("Enregistrer le(s) destinataire(s)")
+        bouton.setCursor(Qt.PointingHandCursor)
+        bouton.setStyleSheet(self._style_bouton("#1a5276", "#154360"))
+        bouton.clicked.connect(self._enregistrer_destinataires)
+        layout.addWidget(bouton)
+
+        return bloc
+
+    def _enregistrer_destinataires(self):
+        adresses = [a.strip() for a in self.champ_destinataires.text().split(",") if a.strip()]
+
+        if not adresses:
+            self.label_statut_email.setStyleSheet("color: #c0392b; font-size: 12px;")
+            self.label_statut_email.setText("Indiquez au moins une adresse email.")
+            return
+
+        motif_email = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+        invalides = [a for a in adresses if not motif_email.match(a)]
+        if invalides:
+            self.label_statut_email.setStyleSheet("color: #c0392b; font-size: 12px;")
+            self.label_statut_email.setText(f"Adresse(s) invalide(s) : {', '.join(invalides)}")
+            return
+
+        valeur_normalisee = ",".join(adresses)
+
+        chemin_env = find_dotenv()
+        if not chemin_env:
+            self.label_statut_email.setStyleSheet("color: #c0392b; font-size: 12px;")
+            self.label_statut_email.setText("Fichier .env introuvable.")
+            return
+
+        set_key(chemin_env, "SMTP_DESTINATAIRES", valeur_normalisee)
+        os.environ["SMTP_DESTINATAIRES"] = valeur_normalisee
+        self.champ_destinataires.setText(valeur_normalisee)
+
+        self.label_statut_email.setStyleSheet("color: #27ae60; font-size: 12px;")
+        self.label_statut_email.setText("Destinataire(s) enregistré(s) avec succès.")
+
+    # --- Bloc 3 : Sauvegarde de la base de données ---
     def _bloc_sauvegarde(self):
         bloc = QFrame()
         bloc.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")

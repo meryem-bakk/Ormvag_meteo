@@ -8,3 +8,6 @@ Rapports/
 *.xlsx
 *.csv
 .vscode/
+build/
+dist/
+arbre.txt

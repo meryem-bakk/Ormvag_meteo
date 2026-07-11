@@ -36,3 +36,20 @@ class IndicateursWorker(QThread):
         from app.services.calcul_indicateurs import calculer_indicateurs
         total = calculer_indicateurs(log=self.ligne_log.emit)
         self.termine.emit(total)
+
+class TacheQuotidienneWorker(QThread):
+    ligne_log = Signal(str)
+    termine = Signal()
+
+    def run(self):
+        import builtins
+        ancien_print = builtins.print
+        builtins.print = lambda *args, **kwargs: self.ligne_log.emit(" ".join(str(a) for a in args))
+
+        try:
+            from app.services.scheduler import tache_quotidienne_6h
+            tache_quotidienne_6h()
+        finally:
+            builtins.print = ancien_print
+
+        self.termine.emit()

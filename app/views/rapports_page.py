@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
+import os
 from datetime import datetime
 from app.database import SessionLocal
 from app.models.station import Station
@@ -12,6 +13,7 @@ from app.services.generateur_rapport import (
     recuperer_donnees, generer_pdf, generer_excel, generer_csv,
     recuperer_synthese, generer_graphique_temperature, generer_pdf_synthese
 )
+from app.services.email_service import envoyer_rapport_par_email
 import io
 import matplotlib
 matplotlib.use("Agg")
@@ -156,6 +158,9 @@ class RapportsPage(QWidget):
         self.label_statut.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         layout_droit.addWidget(self.label_statut)
 
+        ligne_boutons = QHBoxLayout()
+        ligne_boutons.setSpacing(10)
+
         bouton_generer = QPushButton("📄  Générer le rapport")
         bouton_generer.setCursor(Qt.PointingHandCursor)
         bouton_generer.setMinimumHeight(42)
@@ -164,7 +169,19 @@ class RapportsPage(QWidget):
             QPushButton:hover { background-color: #154360; }
         """)
         bouton_generer.clicked.connect(self._generer)
-        layout_droit.addWidget(bouton_generer)
+        ligne_boutons.addWidget(bouton_generer, stretch=1)
+
+        bouton_email = QPushButton("📧  Envoyer par email")
+        bouton_email.setCursor(Qt.PointingHandCursor)
+        bouton_email.setMinimumHeight(42)
+        bouton_email.setStyleSheet("""
+            QPushButton { background-color: #229954; color: white; border-radius: 6px; font-weight: bold; font-size: 13px; }
+            QPushButton:hover { background-color: #1e8449; }
+        """)
+        bouton_email.clicked.connect(self._envoyer_par_email)
+        ligne_boutons.addWidget(bouton_email, stretch=1)
+
+        layout_droit.addLayout(ligne_boutons)
 
         corps.addWidget(panneau_droit, stretch=1)
         layout.addLayout(corps)
@@ -261,3 +278,84 @@ class RapportsPage(QWidget):
         except Exception as e:
             self.label_statut.setText("")
             QMessageBox.critical(self, "Erreur", f"Impossible de générer le rapport :\n{e}")
+
+    def _envoyer_par_email(self):
+        destinataires = os.getenv("SMTP_DESTINATAIRES", "").strip()
+        if not destinataires:
+            QMessageBox.warning(
+                self, "Configuration manquante",
+                "Aucun destinataire configuré.\nRenseignez SMTP_DESTINATAIRES dans le fichier .env."
+            )
+            return
+
+        if self.radio_pdf.isChecked():
+            extension, nom_format = ".pdf", "PDF"
+        elif self.radio_excel.isChecked():
+            extension, nom_format = ".xlsx", "Excel"
+        else:
+            extension, nom_format = ".csv", "CSV"
+
+        reponse = QMessageBox.question(
+            self, "Confirmer l'envoi",
+            f"Envoyer ce rapport (format {nom_format}) par email à :\n{destinataires} ?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reponse != QMessageBox.Yes:
+            return
+
+        station_ids = self._stations_selectionnees()
+        date_debut = datetime.combine(self.date_debut.date().toPython(), datetime.min.time())
+        date_fin = datetime.combine(self.date_fin.date().toPython(), datetime.max.time())
+        type_rapport = "synthese" if self.radio_synthese.isChecked() else "detaille"
+
+        os.makedirs("Rapports", exist_ok=True)
+        chemin = os.path.join(
+            "Rapports",
+            f"rapport_ormvag_{type_rapport}_{date_debut.strftime('%Y%m%d')}_{date_fin.strftime('%Y%m%d')}{extension}"
+        )
+
+        self.label_statut.setText("Génération et envoi du rapport...")
+
+        try:
+            if self.radio_synthese.isChecked():
+                df = recuperer_synthese(station_ids, date_debut, date_fin)
+                if df.empty:
+                    QMessageBox.information(self, "Aucune donnée", "Aucune mesure trouvée pour cette sélection.")
+                    self.label_statut.setText("")
+                    return
+
+                if self.radio_pdf.isChecked():
+                    graphique = generer_graphique_temperature(station_ids, date_debut, date_fin)
+                    generer_pdf_synthese(chemin, date_debut, date_fin, df, graphique)
+                elif self.radio_excel.isChecked():
+                    generer_excel(chemin, df)
+                else:
+                    generer_csv(chemin, df)
+            else:
+                df = recuperer_donnees(station_ids, date_debut, date_fin)
+                if df.empty:
+                    QMessageBox.information(self, "Aucune donnée", "Aucune mesure trouvée pour cette sélection.")
+                    self.label_statut.setText("")
+                    return
+
+                if self.radio_pdf.isChecked():
+                    titre = "Toutes les stations" if station_ids is None else f"{len(station_ids)} station(s) sélectionnée(s)"
+                    generer_pdf(chemin, titre, date_debut, date_fin, df)
+                elif self.radio_excel.isChecked():
+                    generer_excel(chemin, df)
+                else:
+                    generer_csv(chemin, df)
+
+            envoyer_rapport_par_email(
+                chemin,
+                sujet=f"ORMVAG — Rapport météo du {date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')}",
+                corps=(
+                    "Bonjour,\n\nVeuillez trouver ci-joint le rapport météorologique demandé.\n\n"
+                    "Cordialement,\nORMVAG — Système météo automatisé"
+                ),
+            )
+            self.label_statut.setText(f"Rapport envoyé par email : {chemin}")
+            QMessageBox.information(self, "Email envoyé", f"Le rapport a été envoyé par email à :\n{destinataires}")
+        except Exception as e:
+            self.label_statut.setText("")
+            QMessageBox.critical(self, "Erreur", f"Impossible d'envoyer le rapport par email :\n{e}")

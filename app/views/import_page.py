@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from app.workers.import_worker import ImportAutoWorker, ImportManuelWorker
+from app.workers.import_worker import ImportManuelWorker, TacheQuotidienneWorker
 
 
 class ImportPage(QWidget):
@@ -23,43 +23,30 @@ class ImportPage(QWidget):
         titre.setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(titre)
 
-        # --- Bloc import automatique ---
-        bloc_auto = QFrame()
-        bloc_auto.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        bloc_auto.setGraphicsEffect(self._ombre_legere())
-        layout_auto = QVBoxLayout(bloc_auto)
-        layout_auto.setContentsMargins(20, 16, 20, 16)
-        layout_auto.setSpacing(10)
+        # --- Bloc test tâche complète (import + indicateurs) ---
+        bloc_tache = QFrame()
+        bloc_tache.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
+        bloc_tache.setGraphicsEffect(self._ombre_legere())
+        layout_tache = QVBoxLayout(bloc_tache)
+        layout_tache.setContentsMargins(20, 16, 20, 16)
+        layout_tache.setSpacing(10)
 
-        label_auto = QLabel("Import automatique — site ORMVAG (avertissement.yobeen.com)")
-        label_auto.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
-        layout_auto.addWidget(label_auto)
+        label_tache = QLabel("Tâche quotidienne complète (normalement automatique à 6h00)")
+        label_tache.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
+        layout_tache.addWidget(label_tache)
 
-        description_auto = QLabel("Se connecte au site avec les identifiants configurés, télécharge et importe les données des 14 stations réelles enregistrées.")
-        description_auto.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-        description_auto.setWordWrap(True)
-        layout_auto.addWidget(description_auto)
+        description_tache = QLabel("Exécute manuellement l'import + le calcul des indicateurs, puis rafraîchit toutes les pages — utile pour tester sans attendre 6h du matin.")
+        description_tache.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        description_tache.setWordWrap(True)
+        layout_tache.addWidget(description_tache)
 
-        ligne_controles = QHBoxLayout()
-        ligne_controles.addWidget(QLabel("Récupérer les"))
+        self.bouton_tache_complete = QPushButton("Exécuter maintenant")
+        self.bouton_tache_complete.setCursor(Qt.PointingHandCursor)
+        self.bouton_tache_complete.setStyleSheet(self._style_bouton("#8e44ad", "#6c3483"))
+        self.bouton_tache_complete.clicked.connect(self._lancer_tache_complete)
+        layout_tache.addWidget(self.bouton_tache_complete)
 
-        self.spin_jours = QSpinBox()
-        self.spin_jours.setRange(1, 90)
-        self.spin_jours.setValue(7)
-        self.spin_jours.setStyleSheet("color: #2c3e50; background-color: white; border: 1px solid #ccc; border-radius: 6px; padding: 4px;")
-        ligne_controles.addWidget(self.spin_jours)
-
-        ligne_controles.addWidget(QLabel("derniers jours"))
-        ligne_controles.addStretch()
-
-        self.bouton_import_auto = QPushButton("Lancer l'import automatique")
-        self.bouton_import_auto.setCursor(Qt.PointingHandCursor)
-        self.bouton_import_auto.setStyleSheet(self._style_bouton("#1a5276", "#154360"))
-        self.bouton_import_auto.clicked.connect(self._lancer_import_auto)
-        ligne_controles.addWidget(self.bouton_import_auto)
-
-        layout_auto.addLayout(ligne_controles)
-        layout.addWidget(bloc_auto)
+        layout.addWidget(bloc_tache)
 
         # --- Bloc import manuel ---
         bloc_manuel = QFrame()
@@ -121,29 +108,29 @@ class ImportPage(QWidget):
 
     def _ajouter_log(self, texte):
         self.journal.append(texte)
-
-    def _lancer_import_auto(self):
-        self.bouton_import_auto.setEnabled(False)
+    
+    def _lancer_tache_complete(self):
         self.bouton_choisir_fichier.setEnabled(False)
+        self.bouton_tache_complete.setEnabled(False)
         self.journal.clear()
-        self._ajouter_log("Démarrage de l'import automatique...")
+        self._ajouter_log("Démarrage de la tâche quotidienne complète...")
 
-        self.worker = ImportAutoWorker(self.spin_jours.value())
+        self.worker = TacheQuotidienneWorker()
         self.worker.ligne_log.connect(self._ajouter_log)
-        self.worker.termine.connect(self._import_auto_termine)
+        self.worker.termine.connect(self._tache_complete_terminee)
         self.worker.start()
 
-    def _import_auto_termine(self, total, nb_erreurs):
-        self._ajouter_log(f"\nImport terminé : {total} mesure(s), {nb_erreurs} erreur(s).")
-        self.bouton_import_auto.setEnabled(True)
+    def _tache_complete_terminee(self):
+        self._ajouter_log("\nTâche terminée — toutes les pages ont été rafraîchies.")
         self.bouton_choisir_fichier.setEnabled(True)
-
+        self.bouton_tache_complete.setEnabled(True)
+        
     def _choisir_et_importer_fichier(self):
         chemin, _ = QFileDialog.getOpenFileName(self, "Choisir un fichier Excel", "", "Fichiers Excel (*.xlsx)")
         if not chemin:
             return
 
-        self.bouton_import_auto.setEnabled(False)
+        self.bouton_tache_complete.setEnabled(False)
         self.bouton_choisir_fichier.setEnabled(False)
         self.journal.clear()
         self._ajouter_log(f"Import du fichier : {chemin}")
@@ -155,5 +142,5 @@ class ImportPage(QWidget):
 
     def _import_manuel_termine(self, total):
         self._ajouter_log(f"\nImport terminé : {total} mesure(s).")
-        self.bouton_import_auto.setEnabled(True)
+        self.bouton_tache_complete.setEnabled(True)
         self.bouton_choisir_fichier.setEnabled(True)

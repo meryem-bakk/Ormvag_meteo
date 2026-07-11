@@ -3,12 +3,13 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QFrame, QHeaderView, QGraphicsDropShadowEffect, QGridLayout,
     QAbstractItemView, QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from app.database import SessionLocal
 from app.models.station import Station
 from app.models.indicateur_journalier import IndicateurJournalier
+from app.models.mesure import Mesure
 from app.workers.import_worker import IndicateursWorker
 from app.services.alertes import detecter_alertes, detecter_anomalies_temperature
 
@@ -21,15 +22,13 @@ class IndicateursPage(QWidget):
         self._build_ui()
         self._charger_stations_dans_combo()
         self._rafraichir()
+        self._demarrer_actualisation_auto()
 
     # ------------------------------------------------------------------
     # Construction de l'interface
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        # La page entière défile via un QScrollArea : ça évite que des widgets
-        # (comme le tableau) ne se disputent l'espace vertical restant et se
-        # chevauchent avec le contenu suivant.
         layout_page = QVBoxLayout(self)
         layout_page.setContentsMargins(0, 0, 0, 0)
 
@@ -58,6 +57,20 @@ class IndicateursPage(QWidget):
         self.bouton_recalculer.setStyleSheet(self._style_bouton("#8e44ad", "#6c3483"))
         self.bouton_recalculer.clicked.connect(self._recalculer)
         entete.addWidget(self.bouton_recalculer)
+
+        self.label_derniere_maj = QLabel("")
+        self.label_derniere_maj.setStyleSheet("color: #7f8c8d; font-size: 11px;")
+        entete.addWidget(self.label_derniere_maj)
+
+        bouton_actualiser = QPushButton("🔄 Actualiser")
+        bouton_actualiser.setCursor(Qt.PointingHandCursor)
+        bouton_actualiser.setStyleSheet("""
+            QPushButton { background-color: white; color: #1a5276; border: 1px solid #d5dbdb; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: bold; }
+            QPushButton:hover { background-color: #eaf2f8; }
+        """)
+        bouton_actualiser.clicked.connect(self.rafraichir)
+        entete.addWidget(bouton_actualiser)
+
         layout.addLayout(entete)
 
         self.bouton_info = QPushButton("ℹ  Définitions et sources des seuils")
@@ -109,7 +122,6 @@ class IndicateursPage(QWidget):
         self.label_statut.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         layout.addWidget(self.label_statut)
 
-        # --- Sélecteur de station ---
         controles = QFrame()
         controles.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
         controles.setGraphicsEffect(self._ombre_legere())
@@ -128,16 +140,12 @@ class IndicateursPage(QWidget):
         layout_controles.addStretch()
         layout.addWidget(controles)
 
-        # --- Alertes météo actives ---
         layout.addWidget(self._label_section("Alertes météo"))
-
         self.zone_alertes = QVBoxLayout()
         self.zone_alertes.setSpacing(8)
         layout.addLayout(self.zone_alertes)
 
-        # --- Cartes indicateurs ---
         layout.addWidget(self._label_section("Indicateurs du jour"))
-
         self.grille_cartes = QGridLayout()
         self.grille_cartes.setSpacing(14)
         self.grille_cartes.setColumnStretch(0, 1)
@@ -146,9 +154,7 @@ class IndicateursPage(QWidget):
         self.grille_cartes.setColumnStretch(3, 1)
         layout.addLayout(self.grille_cartes)
 
-        # --- Historique ---
         layout.addWidget(self._label_section("Historique (30 derniers jours)"))
-
         self.tableau = QTableWidget()
         colonnes = ["Date", "Cumul pluie 7j", "Cumul pluie 30j", "Bilan hydrique 7j", "Jours sans pluie", "Gel", "Stress thermique", "GDD cumulé"]
         self.tableau.setColumnCount(len(colonnes))
@@ -159,9 +165,6 @@ class IndicateursPage(QWidget):
         self.tableau.setSelectionMode(QAbstractItemView.NoSelection)
         self.tableau.setAlternatingRowColors(True)
         self.tableau.setShowGrid(False)
-        # Hauteur fixe + défilement interne : sans ça, Qt étire le tableau
-        # pour occuper tout l'espace vertical restant et il chevauche les
-        # sections suivantes (anomalies) quand il y a beaucoup de lignes.
         self.tableau.setFixedHeight(360)
         self.tableau.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         header = self.tableau.horizontalHeader()
@@ -175,12 +178,59 @@ class IndicateursPage(QWidget):
         """)
         layout.addWidget(self.tableau)
 
-        # --- Anomalies capteur ---
         layout.addWidget(self._label_section("Anomalies capteur détectées"))
-
         self.zone_anomalies = QVBoxLayout()
         self.zone_anomalies.setSpacing(6)
         layout.addLayout(self.zone_anomalies)
+
+    # ------------------------------------------------------------------
+    # Rafraîchissement
+    # ------------------------------------------------------------------
+
+    def rafraichir(self):
+        """Point d'entrée public : bouton Actualiser, minuteur auto, et event_bus."""
+        self._rafraichir()
+        self.label_derniere_maj.setText(f"Mis à jour : {datetime.now().strftime('%H:%M:%S')}")
+
+    def _demarrer_actualisation_auto(self):
+        self._minuteur = QTimer(self)
+        self._minuteur.timeout.connect(self.rafraichir)
+        self._minuteur.start(5 * 60 * 1000)
+
+    def rafraichir_donnees(self):
+        self.rafraichir()
+
+    def _rafraichir(self):
+        if self.combo_station.count() == 0:
+            return
+
+        station_id = self.combo_station.currentData()
+        session = SessionLocal()
+
+        dernier = session.query(IndicateurJournalier).filter_by(
+            station_id=station_id
+        ).order_by(IndicateurJournalier.date.desc()).first()
+
+        historique = session.query(IndicateurJournalier).filter(
+            IndicateurJournalier.station_id == station_id,
+            IndicateurJournalier.date >= date.today() - timedelta(days=30)
+        ).order_by(IndicateurJournalier.date.desc()).all()
+
+        derniere_mesure = session.query(Mesure).filter_by(
+            station_id=station_id
+        ).order_by(Mesure.date_heure.desc()).first()
+
+        mesures_historique = session.query(Mesure).filter(
+            Mesure.station_id == station_id,
+            Mesure.date_heure >= date.today() - timedelta(days=30)
+        ).order_by(Mesure.date_heure).all()
+
+        session.close()
+
+        self._afficher_alertes(derniere_mesure)
+        self._afficher_cartes(dernier)
+        self._afficher_historique(historique)
+        self._afficher_anomalies(mesures_historique)
 
     def _label_section(self, texte):
         label = QLabel(texte)
@@ -237,29 +287,6 @@ class IndicateursPage(QWidget):
         self.bouton_recalculer.setEnabled(True)
         self._rafraichir()
 
-    def _rafraichir(self):
-        if self.combo_station.count() == 0:
-            return
-
-        station_id = self.combo_station.currentData()
-        session = SessionLocal()
-
-        dernier = session.query(IndicateurJournalier).filter_by(
-            station_id=station_id
-        ).order_by(IndicateurJournalier.date.desc()).first()
-
-        historique = session.query(IndicateurJournalier).filter(
-            IndicateurJournalier.station_id == station_id,
-            IndicateurJournalier.date >= date.today() - timedelta(days=30)
-        ).order_by(IndicateurJournalier.date.desc()).all()
-
-        session.close()
-
-        self._afficher_alertes(dernier)
-        self._afficher_cartes(dernier)
-        self._afficher_historique(historique)
-        self._afficher_anomalies(historique)
-
     # ------------------------------------------------------------------
     # Alertes météo
     # ------------------------------------------------------------------
@@ -285,22 +312,21 @@ class IndicateursPage(QWidget):
         l.addStretch()
         return bandeau
 
-    def _afficher_alertes(self, dernier):
+    def _afficher_alertes(self, derniere_mesure):
         while self.zone_alertes.count():
             item = self.zone_alertes.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        if not dernier:
+        if not derniere_mesure:
             self.zone_alertes.addWidget(
                 self._creer_bandeau("ℹ", "Aucune donnée disponible pour cette station.", "#7f8c8d")
             )
             return
 
-        # ⚠️ Adapte ces noms de champs à ton modèle réel si besoin
-        temp_max = getattr(dernier, "temp_max", None)
-        vent_vitesse = getattr(dernier, "vent_vitesse", None)
-        humidite = getattr(dernier, "humidite_moy", None)
+        temp_max = derniere_mesure.temperature_max
+        vent_vitesse = derniere_mesure.vent
+        humidite = derniere_mesure.humidite
 
         alertes = detecter_alertes(temp_max, vent_vitesse, humidite)
 
@@ -320,7 +346,6 @@ class IndicateursPage(QWidget):
     # ------------------------------------------------------------------
 
     def _afficher_cartes(self, dernier):
-        # Vide la grille existante
         while self.grille_cartes.count():
             item = self.grille_cartes.takeAt(0)
             if item.widget():
@@ -348,9 +373,7 @@ class IndicateursPage(QWidget):
 
     def _creer_carte(self, icone, titre, valeur, couleur):
         carte = QFrame()
-        carte.setStyleSheet(f"""
-            QFrame {{ background-color: white; border-radius: 12px; border: 1px solid #eef0f2; }}
-        """)
+        carte.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: 1px solid #eef0f2; }")
         carte.setGraphicsEffect(self._ombre_legere())
         carte.setMinimumHeight(96)
 
@@ -414,23 +437,19 @@ class IndicateursPage(QWidget):
     # Détection d'anomalies capteur
     # ------------------------------------------------------------------
 
-    def _afficher_anomalies(self, historique):
+    def _afficher_anomalies(self, mesures_historique):
         while self.zone_anomalies.count():
             item = self.zone_anomalies.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        if not historique:
+        if not mesures_historique:
             label = QLabel("Aucune donnée disponible pour cette station.")
             label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-style: italic;")
             self.zone_anomalies.addWidget(label)
             return
 
-        # historique est trié desc (récent -> ancien) ; on remet en ordre chrono pour l'analyse
-        historique_chrono = list(reversed(historique))
-        # ⚠️ Adapte ce nom de champ à ton modèle réel si besoin
-        valeurs = [getattr(ind, "temp_max", None) for ind in historique_chrono]
-
+        valeurs = [m.temperature_max for m in mesures_historique]
         anomalies = detecter_anomalies_temperature(valeurs)
 
         if not anomalies:
@@ -440,7 +459,7 @@ class IndicateursPage(QWidget):
             return
 
         for a in anomalies:
-            date_ind = historique_chrono[a.index].date.strftime("%d/%m/%Y")
+            date_mesure = mesures_historique[a.index].date_heure.strftime("%d/%m/%Y")
             self.zone_anomalies.addWidget(
-                self._creer_bandeau("⚠", f"{date_ind} — valeur {a.valeur:.1f}°C : {a.raison}", "#c0392b", word_wrap=True)
+                self._creer_bandeau("⚠", f"{date_mesure} — valeur {a.valeur:.1f}°C : {a.raison}", "#c0392b", word_wrap=True)
             )
