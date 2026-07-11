@@ -9,7 +9,6 @@ from app.models.user import User
 from app.views.main_window import MainWindow
 from datetime import datetime
 
-
 class LoginWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -55,7 +54,7 @@ class LoginWindow(QWidget):
         sous_titre_gauche.setAlignment(Qt.AlignCenter)
         layout_gauche.addWidget(sous_titre_gauche)
 
-        stats_rapides = QLabel("17 stations  •  Surveillance continue  •  Aide à la décision")
+        stats_rapides = QLabel("14 stations  •  Surveillance continue  •  Aide à la décision")
         stats_rapides.setStyleSheet("color: #85a9c4; font-size: 11px; margin-top: 20px;")
         stats_rapides.setAlignment(Qt.AlignCenter)
         layout_gauche.addWidget(stats_rapides)

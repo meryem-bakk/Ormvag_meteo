@@ -187,6 +187,9 @@ class StationsPage(QWidget):
         formulaire.setGraphicsEffect(self._ombre_legere())
         layout.addWidget(self.tableau)
 
+    def rafraichir_donnees(self):
+        self._charger_stations()
+
     def _label(self, style, texte):
         label = QLabel(texte)
         label.setStyleSheet(style)
