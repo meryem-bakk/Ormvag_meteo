@@ -11,7 +11,8 @@ from app.database import SessionLocal
 from app.models.station import Station
 from app.services.generateur_rapport import (
     recuperer_donnees, generer_pdf, generer_excel, generer_csv,
-    recuperer_synthese, generer_graphique_temperature, generer_pdf_synthese
+    recuperer_synthese, generer_graphique_temperature, generer_pdf_synthese,
+    generer_excel_synthese, generer_csv_synthese,
 )
 from app.services.email_service import envoyer_rapport_par_email
 import io
@@ -255,9 +256,9 @@ class RapportsPage(QWidget):
                     graphique = generer_graphique_temperature(station_ids, date_debut, date_fin)
                     generer_pdf_synthese(chemin, date_debut, date_fin, df, graphique)
                 elif self.radio_excel.isChecked():
-                    generer_excel(chemin, df)
+                    generer_excel_synthese(chemin, df)
                 else:
-                    generer_csv(chemin, df)
+                    generer_csv_synthese(chemin, df)
             else:
                 df = recuperer_donnees(station_ids, date_debut, date_fin)
                 if df.empty:
@@ -328,9 +329,9 @@ class RapportsPage(QWidget):
                     graphique = generer_graphique_temperature(station_ids, date_debut, date_fin)
                     generer_pdf_synthese(chemin, date_debut, date_fin, df, graphique)
                 elif self.radio_excel.isChecked():
-                    generer_excel(chemin, df)
+                    generer_excel_synthese(chemin, df)
                 else:
-                    generer_csv(chemin, df)
+                    generer_csv_synthese(chemin, df)
             else:
                 df = recuperer_donnees(station_ids, date_debut, date_fin)
                 if df.empty:
