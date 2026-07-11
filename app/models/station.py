@@ -11,3 +11,4 @@ class Station(Base):
     longitude = Column(Float)
     actif = Column(Boolean, default=True)
     identifiant_externe = Column(String, nullable=True)
+    province = Column(String, nullable=True)
