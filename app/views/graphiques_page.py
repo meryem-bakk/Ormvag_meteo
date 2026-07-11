@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QFrame,
     QCheckBox, QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit, QTimeEdit
 )
-from PySide6.QtCore import Qt, QDate, QTime
+from PySide6.QtCore import Qt, QDate, QTime, QTimer
 from PySide6.QtGui import QColor
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -17,6 +17,8 @@ VARIABLES = {
     "Humidité (%)": "humidite",
     "Pluie (mm)": "pluie",
     "Vent (km/h)": "vent",
+    "Rayonnement (W/m²)": "rayonnement",
+    "Évapotranspiration (mm)": "eto",
 }
 
 COULEURS_STATIONS = ["#1a5276", "#c0392b", "#27ae60", "#e67e22", "#8e44ad", "#16a085", "#d35400"]
@@ -30,15 +32,33 @@ class GraphiquesPage(QWidget):
         self._build_ui()
         self._charger_stations()
         self._tracer_graphique()
+        self._demarrer_actualisation_auto()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
+        entete = QHBoxLayout()
         titre = QLabel("Graphiques")
         titre.setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50;")
-        layout.addWidget(titre)
+        entete.addWidget(titre)
+        entete.addStretch()
+
+        self.label_derniere_maj = QLabel("")
+        self.label_derniere_maj.setStyleSheet("color: #7f8c8d; font-size: 11px;")
+        entete.addWidget(self.label_derniere_maj)
+
+        bouton_actualiser = QPushButton("🔄 Actualiser")
+        bouton_actualiser.setCursor(Qt.PointingHandCursor)
+        bouton_actualiser.setStyleSheet("""
+            QPushButton { background-color: white; color: #1a5276; border: 1px solid #d5dbdb; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: bold; }
+            QPushButton:hover { background-color: #eaf2f8; }
+        """)
+        bouton_actualiser.clicked.connect(self.rafraichir)
+        entete.addWidget(bouton_actualiser)
+
+        layout.addLayout(entete)
 
         # --- Contrôles : variable + période ---
         controles = QFrame()
@@ -144,6 +164,19 @@ class GraphiquesPage(QWidget):
 
         corps.addLayout(colonne_droite, stretch=1)
         layout.addLayout(corps)
+    
+    def rafraichir(self):
+        self._tracer_graphique()
+        from datetime import datetime
+        self.label_derniere_maj.setText(f"Mis à jour : {datetime.now().strftime('%H:%M:%S')}")
+
+    def _demarrer_actualisation_auto(self):
+        self._minuteur = QTimer(self)
+        self._minuteur.timeout.connect(self.rafraichir)
+        self._minuteur.start(5 * 60 * 1000)
+
+    def rafraichir_donnees(self):
+        self.rafraichir()
 
     def _style_champ(self):
         return """

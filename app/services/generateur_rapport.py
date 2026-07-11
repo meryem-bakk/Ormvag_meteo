@@ -1,5 +1,6 @@
+import os
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
@@ -238,3 +239,106 @@ def generer_pdf_synthese(chemin_sortie, date_debut, date_fin, df_synthese, graph
             elements.append(Image(graphique_buffer, width=16*cm, height=10*cm))
 
     doc.build(elements)
+
+
+def recuperer_rapport_journalier(date_fin=None):
+    """Synthèse des dernières 24h par station, triée par cumul de pluie décroissant."""
+    if date_fin is None:
+        date_fin = datetime.now()
+    date_debut = date_fin - timedelta(hours=24)
+
+    session = SessionLocal()
+    stations = session.query(Station).filter_by(actif=True).all()
+
+    lignes = []
+    for station in stations:
+        mesures = session.query(Mesure).filter(
+            Mesure.station_id == station.id,
+            Mesure.date_heure >= date_debut,
+            Mesure.date_heure <= date_fin,
+        ).all()
+
+        if not mesures:
+            continue
+
+        temperatures = [m.temperature for m in mesures if m.temperature is not None]
+        temp_mins = [m.temperature_min for m in mesures if m.temperature_min is not None]
+        temp_maxs = [m.temperature_max for m in mesures if m.temperature_max is not None]
+        humidites = [m.humidite for m in mesures if m.humidite is not None]
+        vents = [m.vent for m in mesures if m.vent is not None]
+        pluies = [m.pluie or 0 for m in mesures]
+
+        lignes.append({
+            "Station": station.nom,
+            "Cumul pluie 24h (mm)": round(sum(pluies), 1),
+            "Temp. min (°C)": round(min(temp_mins), 1) if temp_mins else None,
+            "Temp. moyenne (°C)": round(sum(temperatures) / len(temperatures), 1) if temperatures else None,
+            "Temp. max (°C)": round(max(temp_maxs), 1) if temp_maxs else None,
+            "Hum. moyenne (%)": round(sum(humidites) / len(humidites), 1) if humidites else None,
+            "Vent moyen (km/h)": round(sum(vents) / len(vents), 1) if vents else None,
+        })
+
+    session.close()
+
+    df = pd.DataFrame(lignes)
+    if not df.empty:
+        df = df.sort_values("Cumul pluie 24h (mm)", ascending=False).reset_index(drop=True)
+    return df, date_debut, date_fin
+
+
+def generer_pdf_rapport_journalier(chemin_sortie, df, date_debut, date_fin):
+    doc = SimpleDocTemplate(chemin_sortie, pagesize=A4,
+                             topMargin=1.5*cm, bottomMargin=1.5*cm,
+                             leftMargin=1.5*cm, rightMargin=1.5*cm)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    style_titre = ParagraphStyle("TitreORMVAG", parent=styles["Title"], textColor=colors.HexColor("#1a5276"))
+    elements.append(Paragraph("ORMVAG — Rapport météorologique journalier", style_titre))
+    elements.append(Paragraph(
+        f"Période couverte : {date_debut.strftime('%d/%m/%Y %H:%M')} → {date_fin.strftime('%d/%m/%Y %H:%M')} (24 dernières heures)",
+        styles["Normal"]
+    ))
+    elements.append(Paragraph(f"Généré automatiquement le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles["Normal"]))
+    elements.append(Spacer(1, 0.6*cm))
+
+    if df.empty:
+        elements.append(Paragraph("Aucune mesure reçue sur les dernières 24 heures.", styles["Normal"]))
+    else:
+        cumul_reseau = df["Cumul pluie 24h (mm)"].sum()
+        nb_stations_pluie = int((df["Cumul pluie 24h (mm)"] > 0).sum())
+        elements.append(Paragraph(
+            f"Cumul de précipitations réseau ({len(df)} stations) : <b>{cumul_reseau:.1f} mm</b>",
+            styles["Heading3"]
+        ))
+        elements.append(Paragraph(
+            f"{nb_stations_pluie} station(s) sur {len(df)} ont enregistré de la pluie sur la période.",
+            styles["Normal"]
+        ))
+        elements.append(Spacer(1, 0.4*cm))
+
+        donnees_tableau = [df.columns.tolist()] + df.astype(str).values.tolist()
+        tableau = Table(donnees_tableau, repeatRows=1)
+        tableau.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a5276")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("BACKGROUND", (1, 1), (1, -1), colors.HexColor("#eaf2f8")),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ROWBACKGROUNDS", (0, 1), (0, -1), [colors.white, colors.HexColor("#f4f6f8")]),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#dddddd")),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        elements.append(tableau)
+
+    doc.build(elements)
+
+
+def generer_rapport_journalier_pdf(dossier_sortie="Rapports"):
+    """Génère le PDF du rapport journalier (24h, axé pluie) et retourne (chemin, df)."""
+    df, date_debut, date_fin = recuperer_rapport_journalier()
+    os.makedirs(dossier_sortie, exist_ok=True)
+    nom_fichier = f"rapport_journalier_{date_fin.strftime('%Y%m%d_%H%M')}.pdf"
+    chemin = os.path.join(dossier_sortie, nom_fichier)
+    generer_pdf_rapport_journalier(chemin, df, date_debut, date_fin)
+    return chemin, df

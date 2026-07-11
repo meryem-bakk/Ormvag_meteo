@@ -17,11 +17,14 @@ from app.models.station import Station
 from app.models.mesure import Mesure
 from app.models.indicateur_journalier import IndicateurJournalier
 
+
 VARIABLES = {
     "Température (°C)": "temperature",
     "Humidité (%)": "humidite",
     "Pluie (mm)": "pluie",
     "Vent (km/h)": "vent",
+    "Rayonnement (W/m²)": "rayonnement",
+    "Évapotranspiration (mm)": "eto",
 }
 
 # Noms français pour éviter de dépendre de la locale système (source du bug
@@ -157,6 +160,10 @@ class DashboardPage(QWidget):
         layout.addLayout(corps)
 
         # Premier chargement des données dynamiques
+        self.rafraichir()
+
+    def rafraichir_donnees(self):
+        """Point d'entrée utilisé par l'event_bus (ex: après l'import de 6h)."""
         self.rafraichir()
 
     def _demarrer_actualisation_auto(self):

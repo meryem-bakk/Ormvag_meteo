@@ -12,6 +12,7 @@ from app.models.mesure import Mesure
 
 
 class DonneesPage(QWidget):
+   
     def __init__(self):
         super().__init__()
         self.setStyleSheet("background-color: #f4f6f8;")
@@ -124,6 +125,9 @@ class DonneesPage(QWidget):
             QTableWidget::item:selected { background-color: #d6eaf8; color: #1a5276; }
         """)
         layout.addWidget(self.tableau)
+    
+    def rafraichir_donnees(self):
+       self._rechercher()
 
     def _style_champ_date(self):
         return """

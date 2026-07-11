@@ -6,10 +6,12 @@ from app.database import SessionLocal
 from app.models.user import User
 from app.utils.enter_focus_filter import FiltreEntreeChampSuivant
 from app.services.scheduler import demarrer_scheduler
+from PySide6.QtGui import QIcon
 
 MODE_TEST_SANS_LOGIN = True  # Mettre à True pour ignorer l'écran de connexion et se connecter automatiquement avec l'utilisateur "admin"
 
 app = QApplication(sys.argv)
+app.setWindowIcon(QIcon("app/assets/icon.png"))
 app.setStyleSheet("""
     QWidget { color: #2c3e50; }
     QMessageBox { background-color: white; }
