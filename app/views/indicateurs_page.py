@@ -12,6 +12,7 @@ from app.models.indicateur_journalier import IndicateurJournalier
 from app.models.mesure import Mesure
 from app.workers.import_worker import IndicateursWorker
 from app.services.alertes import detecter_alertes, detecter_anomalies_temperature
+from app.services.detection_anomalies_ml import detecter_anomalies_mesures
 
 
 class IndicateursPage(QWidget):
@@ -99,7 +100,8 @@ class IndicateursPage(QWidget):
             ("Alerte canicule", "Seuil : température maximale > 40°C."),
             ("Alerte vent fort", "Seuil : vitesse du vent > 40 km/h."),
             ("Risque de maladies", "Seuil : humidité relative > 95%. Favorise le développement de maladies fongiques."),
-            ("Anomalie capteur", "Valeur hors plage physiquement plausible, ou écart brutal par rapport aux mesures récentes du même capteur."),
+            ("Anomalie capteur (règle)", "Valeur hors plage physiquement plausible, ou écart brutal par rapport aux mesures récentes du même capteur."),
+            ("Anomalie détectée par IA", "Modèle Isolation Forest entraîné sur l'historique de toutes les stations : signale les journées dont la combinaison de variables (température, humidité, pluie, vent...) est statistiquement atypique pour la station concernée, même si chaque valeur prise isolément reste plausible."),
         ]
 
         for titre_def, texte_def in definitions:
@@ -450,16 +452,32 @@ class IndicateursPage(QWidget):
             return
 
         valeurs = [m.temperature_max for m in mesures_historique]
-        anomalies = detecter_anomalies_temperature(valeurs)
+        anomalies_regles = detecter_anomalies_temperature(valeurs)
 
-        if not anomalies:
+        station_id = self.combo_station.currentData()
+        anomalies_ml = detecter_anomalies_mesures(mesures_historique, station_id)
+
+        if not anomalies_regles and not anomalies_ml:
             label = QLabel("Aucune anomalie détectée sur les 30 derniers jours.")
             label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-style: italic;")
             self.zone_anomalies.addWidget(label)
             return
 
-        for a in anomalies:
+        for a in anomalies_regles:
             date_mesure = mesures_historique[a.index].date_heure.strftime("%d/%m/%Y")
             self.zone_anomalies.addWidget(
                 self._creer_bandeau("⚠", f"{date_mesure} — valeur {a.valeur:.1f}°C : {a.raison}", "#c0392b", word_wrap=True)
+            )
+
+        for mesure, score in anomalies_ml:
+            date_mesure = mesure.date_heure.strftime("%d/%m/%Y")
+            details = (
+                f"T={mesure.temperature}, Tmin={mesure.temperature_min}, Tmax={mesure.temperature_max}, "
+                f"HR={mesure.humidite}, Pluie={mesure.pluie}mm"
+            )
+            self.zone_anomalies.addWidget(
+                self._creer_bandeau(
+                    "🤖", f"{date_mesure} — anomalie détectée par IA (score {score:.2f}) : {details}",
+                    "#8e44ad", word_wrap=True
+                )
             )

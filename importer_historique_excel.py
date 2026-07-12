@@ -41,6 +41,15 @@ def importer_feuille(df, station, session_db):
             total_ignorees += 1
             continue
 
+        # Ligne "plate" (température et/ou humidité à 0 partout) : signature de
+        # panne capteur, pas une vraie mesure. On ne l'importe jamais, sinon un
+        # nettoyage précédent (nettoyer_donnees.py) serait défait au prochain import.
+        temp_plate = ligne["temp_min"] == 0 and ligne["temp_moy"] == 0 and ligne["temp_max"] == 0
+        hum_plate = ligne["hum_min"] == 0 and ligne["hum_moy"] == 0 and ligne["hum_max"] == 0
+        if temp_plate or hum_plate:
+            total_ignorees += 1
+            continue
+
         session_db.query(Mesure).filter(
             Mesure.station_id == station.id,
             Mesure.date_heure == date_mesure

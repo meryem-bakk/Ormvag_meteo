@@ -166,11 +166,25 @@ def preparer(log=print):
         noms_stations=np.array(noms_stations),
     )
 
+    # Petit fichier compagnon (quelques Ko) avec uniquement ce qu'il faut pour faire
+    # de l'inférence en production — contrairement à donnees_lstm.npz (fenêtres
+    # d'entraînement, ~85 Mo), celui-ci peut être versionné dans le dépôt.
+    chemin_params = os.path.join(os.path.dirname(__file__), "parametres_lstm.npz")
+    np.savez(
+        chemin_params,
+        moyenne=moyenne, ecart_type=ecart_type,
+        colonnes_features=np.array(COLONNES_FEATURES),
+        colonnes_cibles=np.array(COLONNES_CIBLES),
+        noms_stations=np.array(noms_stations),
+        taille_fenetre=TAILLE_FENETRE,
+    )
+
     log("\n=== Résumé ===")
     log(f"Train : {len(resultat['X_train'])} fenêtre(s)")
     log(f"Val   : {len(resultat['X_val'])} fenêtre(s)")
     log(f"Test  : {len(resultat['X_test'])} fenêtre(s)")
     log(f"Fichier sauvegardé : {chemin_sortie}")
+    log(f"Paramètres d'inférence sauvegardés : {chemin_params}")
 
     return resultat
 
