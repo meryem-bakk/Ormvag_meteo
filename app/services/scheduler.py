@@ -3,6 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.calcul_indicateurs import calculer_indicateurs
 from app.services.generateur_rapport import generer_rapport_journalier_pdf
 from app.services.email_service import envoyer_rapport_par_email
+from app.services.sauvegarde import creer_sauvegarde_auto
 from app.utils.event_bus import event_bus
 
 
@@ -45,6 +46,13 @@ def tache_quotidienne_6h():
         print("[Scheduler 6h] Rapport journalier envoyé par email.")
     except Exception as e:
         print(f"[Scheduler 6h] Erreur lors de la génération/envoi du rapport journalier : {e}")
+
+    try:
+        chemin_sauvegarde = creer_sauvegarde_auto(log=print)
+        if chemin_sauvegarde:
+            print(f"[Scheduler 6h] Sauvegarde automatique créée : {chemin_sauvegarde}")
+    except Exception as e:
+        print(f"[Scheduler 6h] Erreur lors de la sauvegarde automatique : {e}")
 
     event_bus.donnees_mises_a_jour.emit()
     print("[Scheduler 6h] Tâche quotidienne terminée, pages notifiées.")
