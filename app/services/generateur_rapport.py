@@ -137,22 +137,24 @@ _COLONNES_MIN_ABSOLU = {"Temp. min (°C)"}
 _COLONNES_MAX_COMPTEUR = {"Jours de pluie", "Jours de gel", "Jours de stress thermique"}
 
 
-def construire_synthese_groupee_par_province(df_synthese):
-    """Transforme le DataFrame de synthèse (une ligne par station) en un tableau unique
-    groupé par province : une ligne d'en-tête de région, les stations, puis une ligne
-    "Synthèse région" (moyenne pour les taux/cumuls, extrême absolu pour les températures
-    min/max, maximum pour les compteurs de jours — une moyenne n'a pas de sens pour ceux-ci).
+def construire_tableau_groupe_par_province(df):
+    """Transforme un DataFrame (une ligne par station, colonnes Station + Province +
+    métriques) en un tableau unique groupé par province : une ligne d'en-tête de région,
+    les stations, puis une ligne "Synthèse région" (moyenne pour les taux/cumuls, extrême
+    absolu pour les températures min/max, maximum pour les compteurs de jours — une
+    moyenne n'a pas de sens pour ceux-ci). Utilisé par le rapport de synthèse et le
+    rapport journalier, pour une présentation cohérente entre les rapports.
     Retourne (df_groupe, indices_entete, indices_synthese) — les indices repèrent les
     lignes spéciales dans df_groupe pour une mise en forme particulière (PDF)."""
-    if df_synthese.empty:
-        return df_synthese, [], []
+    if df.empty:
+        return df, [], []
 
-    colonnes_metriques = [c for c in df_synthese.columns if c not in ("Station", "Province")]
+    colonnes_metriques = [c for c in df.columns if c not in ("Station", "Province")]
     lignes = []
     indices_entete = []
     indices_synthese = []
 
-    for province, groupe in df_synthese.groupby("Province", sort=True):
+    for province, groupe in df.groupby("Province", sort=True):
         indices_entete.append(len(lignes))
         ligne_entete = {"Stations par région": province}
         for c in colonnes_metriques:
@@ -183,12 +185,12 @@ def construire_synthese_groupee_par_province(df_synthese):
 
 
 def generer_excel_synthese(chemin_sortie, df_synthese):
-    df_groupe, _, _ = construire_synthese_groupee_par_province(df_synthese)
+    df_groupe, _, _ = construire_tableau_groupe_par_province(df_synthese)
     generer_excel(chemin_sortie, df_groupe)
 
 
 def generer_csv_synthese(chemin_sortie, df_synthese):
-    df_groupe, _, _ = construire_synthese_groupee_par_province(df_synthese)
+    df_groupe, _, _ = construire_tableau_groupe_par_province(df_synthese)
     generer_csv(chemin_sortie, df_groupe)
 
 
@@ -369,7 +371,7 @@ def generer_pdf_synthese(chemin_sortie, date_debut, date_fin, df_synthese, graph
     if df_synthese.empty:
         elements.append(Paragraph("Aucune donnée disponible pour cette sélection.", style_meta))
     else:
-        df_groupe, indices_entete, indices_synthese = construire_synthese_groupee_par_province(df_synthese)
+        df_groupe, indices_entete, indices_synthese = construire_tableau_groupe_par_province(df_synthese)
 
         styles_supplementaires = []
         for i in indices_entete:
@@ -399,18 +401,23 @@ def recuperer_rapport_journalier(date_fin=None):
     if date_fin is None:
         date_fin = datetime.now()
     date_debut = date_fin - timedelta(hours=24)
+    date_debut_30j = date_fin - timedelta(days=30)
 
     session = SessionLocal()
     stations = session.query(Station).filter_by(actif=True).order_by(Station.province, Station.nom).all()
 
     lignes = []
     for station in stations:
-        mesures = session.query(Mesure).filter(
+        mesures_30j = session.query(Mesure).filter(
             Mesure.station_id == station.id,
-            Mesure.date_heure >= date_debut,
+            Mesure.date_heure >= date_debut_30j,
             Mesure.date_heure <= date_fin,
         ).all()
 
+        if not mesures_30j:
+            continue
+
+        mesures = [m for m in mesures_30j if m.date_heure >= date_debut]
         if not mesures:
             continue
 
@@ -420,11 +427,13 @@ def recuperer_rapport_journalier(date_fin=None):
         humidites = [m.humidite for m in mesures if m.humidite is not None]
         vents = [m.vent for m in mesures if m.vent is not None]
         pluies = [m.pluie or 0 for m in mesures]
+        pluies_30j = [m.pluie or 0 for m in mesures_30j]
 
         lignes.append({
             "Station": station.nom,
             "Province": station.province or "Non classée",
-            "Cumul pluie 24h (mm)": round(sum(pluies), 1),
+            "Cumul pluie 24h (mm)": round(float(sum(pluies)), 1),
+            "Cumul pluie 30j (mm)": round(sum(pluies_30j), 1),
             "Temp. min (°C)": round(min(temp_mins), 1) if temp_mins else None,
             "Temp. moyenne (°C)": round(sum(temperatures) / len(temperatures), 1) if temperatures else None,
             "Temp. max (°C)": round(max(temp_maxs), 1) if temp_maxs else None,
@@ -472,10 +481,22 @@ def generer_pdf_rapport_journalier(chemin_sortie, df, date_debut, date_fin):
         ))
         elements.append(Spacer(1, 0.4*cm))
 
+        df_groupe, indices_entete, indices_synthese = construire_tableau_groupe_par_province(df)
+
+        styles_supplementaires = [("BACKGROUND", (1, 1), (1, -1), COULEUR_SURBRILLANCE)]
+        for i in indices_entete:
+            r = i + 1
+            styles_supplementaires.append(("BACKGROUND", (0, r), (-1, r), COULEUR_PROVINCE_FOND))
+            styles_supplementaires.append(("LINEABOVE", (0, r), (-1, r), 1, COULEUR_SEPARATEUR_REGION))
+        for i in indices_synthese:
+            r = i + 1
+            styles_supplementaires.append(("LINEABOVE", (0, r), (-1, r), 0.75, COULEUR_ACCENT))
+
         largeur_disponible = A4[0] - 3*cm
         elements.extend(_element_tableau(
-            df, largeur_disponible, taille_police=9,
-            styles_supplementaires=[("BACKGROUND", (2, 1), (2, -1), COULEUR_SURBRILLANCE)]
+            df_groupe, largeur_disponible, taille_police=8,
+            styles_supplementaires=styles_supplementaires,
+            lignes_en_gras=indices_entete + indices_synthese,
         ))
 
     doc.build(elements)
