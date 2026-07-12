@@ -12,6 +12,7 @@ import bcrypt
 from dotenv import find_dotenv, set_key
 from app.database import SessionLocal
 from app.models.user import User
+from app.services.historique import enregistrer as enregistrer_historique
 
 
 class ParametresPage(QWidget):
@@ -128,6 +129,12 @@ class ParametresPage(QWidget):
             return
 
         user.password_hash = bcrypt.hashpw(nouveau.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+        enregistrer_historique(
+            session, self.utilisateur_connecte, "Changement de mot de passe", "Utilisateur", user.id,
+            f"« {user.username} » a changé son propre mot de passe."
+        )
+
         session.commit()
         session.close()
 
