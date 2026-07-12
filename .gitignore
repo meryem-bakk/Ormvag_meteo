@@ -11,3 +11,4 @@ Rapports/
 build/
 dist/
 arbre.txt
+*.npz
