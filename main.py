@@ -8,7 +8,7 @@ from app.utils.enter_focus_filter import FiltreEntreeChampSuivant
 from app.services.scheduler import demarrer_scheduler
 from PySide6.QtGui import QIcon
 
-MODE_TEST_SANS_LOGIN = True  # Mettre à True pour ignorer l'écran de connexion et se connecter automatiquement avec l'utilisateur "admin"
+MODE_TEST_SANS_LOGIN = False  # Mettre à True pour ignorer l'écran de connexion et se connecter automatiquement avec l'utilisateur "admin"
 
 app = QApplication(sys.argv)
 app.setWindowIcon(QIcon("app/assets/icon.png"))
