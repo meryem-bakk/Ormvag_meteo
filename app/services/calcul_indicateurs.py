@@ -1,11 +1,23 @@
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 from app.database import SessionLocal
 from app.models.station import Station
 from app.models.mesure import Mesure
 from app.models.indicateur_journalier import IndicateurJournalier
 
 TEMP_BASE_GDD = 10  # température de base pour le calcul des degrés-jours (courant pour céréales)
+
+# Un indicateur déjà calculé pour un jour antérieur à cette fenêtre est considéré
+# stable (les mesures "Mesuré" de cette période ne changent plus) : inutile de le
+# recalculer/réécrire à chaque démarrage. Fenêtre volontairement large (au-delà des
+# rolling 7j/30j) pour couvrir les mesures encore en "Prévision" qui se confirment
+# après coup, ou des corrections tardives.
+FENETRE_RECALCUL_JOURS = 45
+
+# Inutile de recharger 10 ans de mesures en mémoire à chaque démarrage : les rolling
+# 7j/30j et le cumul saison n'ont besoin que de la saison agricole en cours (≤ 365
+# jours) + une marge pour la continuité des jours sans pluie. Large marge de sécurité.
+FENETRE_CHARGEMENT_JOURS = 400
 
 
 def _debut_saison_agricole(annee_reference):
@@ -22,9 +34,12 @@ def calculer_indicateurs(log=print):
     debut_saison = _debut_saison_agricole(pd.Timestamp.now().year)
     total_calcule = 0
 
+    date_limite_chargement = date.today() - timedelta(days=FENETRE_CHARGEMENT_JOURS)
+
     for station in stations:
         mesures = session.query(Mesure).filter(
-            Mesure.station_id == station.id
+            Mesure.station_id == station.id,
+            Mesure.date_heure >= date_limite_chargement,
         ).order_by(Mesure.date_heure).all()
 
         if not mesures:
@@ -72,7 +87,18 @@ def calculer_indicateurs(log=print):
         df_saison_gdd["gdd_cumule_saison"] = df_saison_gdd["gdd_jour"].cumsum()
         df = df.merge(df_saison_gdd[["date", "gdd_cumule_saison"]], on="date", how="left")
 
+        dates_existantes = {
+            d for (d,) in session.query(IndicateurJournalier.date)
+            .filter(IndicateurJournalier.station_id == station.id).all()
+        }
+        date_limite_recalcul = date.today() - timedelta(days=FENETRE_RECALCUL_JOURS)
+
+        nb_ignores = 0
         for _, ligne in df.iterrows():
+            if ligne["date"] in dates_existantes and ligne["date"] < date_limite_recalcul:
+                nb_ignores += 1
+                continue
+
             session.query(IndicateurJournalier).filter(
                 IndicateurJournalier.station_id == station.id,
                 IndicateurJournalier.date == ligne["date"]
@@ -95,7 +121,7 @@ def calculer_indicateurs(log=print):
             total_calcule += 1
 
         session.commit()
-        log(f"{station.nom} : {len(df)} jour(s) traité(s).")
+        log(f"{station.nom} : {len(df) - nb_ignores} jour(s) (re)calculé(s), {nb_ignores} déjà stable(s) ignoré(s).")
 
     session.close()
     log(f"Calcul terminé : {total_calcule} indicateur(s) journalier(s) mis à jour.")

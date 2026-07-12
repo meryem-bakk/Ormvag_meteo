@@ -9,7 +9,11 @@ from app.models.mesure import Mesure
 
 def importer_feuille(df, station, session_db):
     """Importe une feuille (une station) dans la table mesures.
-    Remplace les mesures existantes à la même date (idempotent, ré-exécutable sans doublons)."""
+
+    Ne retouche pas les dates déjà confirmées en base ("Mesuré") : une fois une
+    journée mesurée enregistrée, elle ne change plus, inutile de la relire à
+    chaque exécution. Seules les dates absentes, ou présentes uniquement en
+    "Prévision" (donc pas encore finalisées), sont (ré)écrites."""
     donnees = df.iloc[4:].copy()
     donnees.columns = [
         "col0", "date", "eto", "pluie",
@@ -18,12 +22,24 @@ def importer_feuille(df, station, session_db):
         "rayonnement", "vent", "direction_vent", "type_donnee"
     ]
 
-    total = 0
+    types_existants = {
+        m.date_heure: m.type_donnee
+        for m in session_db.query(Mesure.date_heure, Mesure.type_donnee)
+        .filter(Mesure.station_id == station.id)
+        .all()
+    }
+
+    total_ecrites = 0
+    total_ignorees = 0
     for _, ligne in donnees.iterrows():
         if pd.isna(ligne["date"]):
             continue
 
         date_mesure = pd.to_datetime(ligne["date"], format="%d/%m/%Y", dayfirst=True)
+
+        if types_existants.get(date_mesure) == "Mesuré":
+            total_ignorees += 1
+            continue
 
         session_db.query(Mesure).filter(
             Mesure.station_id == station.id,
@@ -46,10 +62,10 @@ def importer_feuille(df, station, session_db):
             direction_vent=str(ligne["direction_vent"]) if pd.notna(ligne["direction_vent"]) else None,
             type_donnee=str(ligne["type_donnee"]) if pd.notna(ligne["type_donnee"]) else "Mesuré",
         ))
-        total += 1
+        total_ecrites += 1
 
     session_db.commit()
-    return total
+    return total_ecrites, total_ignorees
 
 
 def importer_fichier(chemin, session_db, log=print):
@@ -77,16 +93,18 @@ def importer_fichier(chemin, session_db, log=print):
             log(f"  [IGNORÉ] Feuille '{nom_feuille}' : aucune station correspondante (ni identifiant_externe, ni nom) en base.")
             continue
 
-        nb = importer_feuille(df, station, session_db)
-        resultats[station.nom] = nb
-        log(f"  [OK] {station.nom} ({nom_feuille}) : {nb} mesure(s) importée(s)/mise(s) à jour.")
+        nb_ecrites, nb_ignorees = importer_feuille(df, station, session_db)
+        resultats[station.nom] = (nb_ecrites, nb_ignorees)
+        log(f"  [OK] {station.nom} ({nom_feuille}) : {nb_ecrites} écrite(s), "
+            f"{nb_ignorees} déjà confirmée(s) ignorée(s).")
 
     return resultats
 
 
 def importer_dossier(dossier, log=print):
     """Importe tous les fichiers .xlsx d'un dossier. Ré-exécutable sans risque de doublons
-    (chaque mesure remplace l'éventuelle mesure existante à la même date pour la même station)."""
+    et sans retraiter les dates déjà confirmées ("Mesuré") en base — seules les dates
+    nouvelles ou encore en "Prévision" sont (ré)écrites à chaque exécution."""
     session_db = SessionLocal()
     fichiers = sorted(glob.glob(os.path.join(dossier, "*.xlsx")))
     log(f"{len(fichiers)} fichier(s) Excel trouvé(s) dans {dossier}")
@@ -96,17 +114,21 @@ def importer_dossier(dossier, log=print):
         log(f"\nTraitement de {os.path.basename(chemin)}...")
         try:
             resultats = importer_fichier(chemin, session_db, log=log)
-            for station_nom, nb in resultats.items():
-                total_global[station_nom] = total_global.get(station_nom, 0) + nb
+            for station_nom, (nb_ecrites, nb_ignorees) in resultats.items():
+                ecrites_cumulees, ignorees_cumulees = total_global.get(station_nom, (0, 0))
+                total_global[station_nom] = (ecrites_cumulees + nb_ecrites, ignorees_cumulees + nb_ignorees)
         except Exception as e:
             log(f"  [ERREUR] {os.path.basename(chemin)} : {e}")
 
     session_db.close()
 
     log("\n=== Résumé ===")
-    for station_nom, nb in sorted(total_global.items()):
-        log(f"  {station_nom} : {nb} mesure(s)")
-    log(f"Total : {sum(total_global.values())} mesure(s) importée(s)/mise(s) à jour.")
+    total_ecrites = total_ignorees = 0
+    for station_nom, (nb_ecrites, nb_ignorees) in sorted(total_global.items()):
+        log(f"  {station_nom} : {nb_ecrites} écrite(s), {nb_ignorees} ignorée(s)")
+        total_ecrites += nb_ecrites
+        total_ignorees += nb_ignorees
+    log(f"Total : {total_ecrites} mesure(s) écrite(s), {total_ignorees} déjà confirmée(s) ignorée(s).")
 
 
 if __name__ == "__main__":
