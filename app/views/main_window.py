@@ -6,6 +6,7 @@ from app.views.graphiques_page import GraphiquesPage
 from app.views.donnees_page import DonneesPage
 from app.views.import_page import ImportPage
 from app.views.indicateurs_page import IndicateursPage
+from app.views.previsions_page import PrevisionsPage
 from app.views.rapports_page import RapportsPage
 from app.views.parametres_page import ParametresPage
 from app.utils.event_bus import event_bus
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow):
             "Données",
             "Graphiques",
             "Indicateurs agroclimatiques",
+            "Prévisions",
             "Carte",
             "Rapports",
             "Utilisateurs",
@@ -87,6 +89,9 @@ class MainWindow(QMainWindow):
                 page = ImportPage()
             elif nom_page == "Indicateurs agroclimatiques":
                 page = IndicateursPage()
+            elif nom_page == "Prévisions":
+                page = PrevisionsPage()
+                self.pages_refs[nom_page] = page
             elif nom_page == "Rapports":
                 page = RapportsPage()
             elif nom_page == "Paramètres":

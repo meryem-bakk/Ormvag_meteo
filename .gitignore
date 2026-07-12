@@ -12,5 +12,9 @@ build/
 dist/
 arbre.txt
 *.npz
+!ML/parametres_lstm.npz
 ML/*.keras
+!ML/modele_lstm.keras
+ML/*.joblib
+!ML/detecteur_anomalies.joblib
 ML/log_entrainement*.txt
