@@ -12,3 +12,5 @@ build/
 dist/
 arbre.txt
 *.npz
+ML/*.keras
+ML/log_entrainement*.txt
