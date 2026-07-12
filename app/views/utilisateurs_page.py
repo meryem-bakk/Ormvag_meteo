@@ -9,6 +9,8 @@ import bcrypt
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.role import Role
+from app.models.historique_modification import HistoriqueModification
+from app.services.historique import enregistrer as enregistrer_historique
 
 
 class UtilisateursPage(QWidget):
@@ -20,6 +22,7 @@ class UtilisateursPage(QWidget):
         self._build_ui()
         self._charger_roles_dans_combo()
         self._charger_utilisateurs()
+        self._charger_historique()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -163,6 +166,36 @@ class UtilisateursPage(QWidget):
         """)
         layout.addWidget(self.tableau)
 
+        # --- Historique des modifications ---
+        titre_historique = QLabel("Historique des modifications")
+        titre_historique.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-top: 12px;")
+        layout.addWidget(titre_historique)
+
+        self.tableau_historique = QTableWidget()
+        self.tableau_historique.setColumnCount(4)
+        self.tableau_historique.setHorizontalHeaderLabels(["Date", "Acteur", "Action", "Détails"])
+        self.tableau_historique.verticalHeader().setVisible(False)
+
+        header_historique = self.tableau_historique.horizontalHeader()
+        header_historique.setSectionResizeMode(QHeaderView.Interactive)
+        header_historique.setStretchLastSection(False)
+        for i, largeur in enumerate([140, 120, 200, 200]):
+            self.tableau_historique.setColumnWidth(i, largeur)
+        header_historique.setSectionResizeMode(3, QHeaderView.Stretch)
+
+        self.tableau_historique.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tableau_historique.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tableau_historique.setAlternatingRowColors(True)
+        self.tableau_historique.verticalHeader().setDefaultSectionSize(34)
+        self.tableau_historique.setMaximumHeight(220)
+        self.tableau_historique.setStyleSheet("""
+            QTableWidget { background-color: white; border-radius: 10px; color: #2c3e50; gridline-color: #ecf0f1; border: none; }
+            QTableWidget::item { padding: 6px; }
+            QTableWidget::item:alternate { background-color: #f8f9fa; }
+            QHeaderView::section { background-color: #ecf0f1; color: #2c3e50; padding: 8px; border: none; font-weight: bold; }
+        """)
+        layout.addWidget(self.tableau_historique)
+
     def _label(self, style, texte):
         label = QLabel(texte)
         label.setStyleSheet(style)
@@ -213,6 +246,30 @@ class UtilisateursPage(QWidget):
                 else:
                     item.setForeground(QColor("#2c3e50"))
                 self.tableau.setItem(i, col, item)
+
+        session.close()
+
+    def _charger_historique(self):
+        session = SessionLocal()
+        entrees = (
+            session.query(HistoriqueModification)
+            .order_by(HistoriqueModification.date_heure.desc())
+            .limit(100)
+            .all()
+        )
+
+        self.tableau_historique.setRowCount(len(entrees))
+        for i, entree in enumerate(entrees):
+            valeurs = [
+                entree.date_heure.strftime("%d/%m/%Y %H:%M") if entree.date_heure else "—",
+                entree.acteur.username if entree.acteur else "—",
+                entree.action,
+                entree.description,
+            ]
+            for col, valeur in enumerate(valeurs):
+                item = QTableWidgetItem(valeur)
+                item.setForeground(QColor("#2c3e50"))
+                self.tableau_historique.setItem(i, col, item)
 
         session.close()
 
@@ -290,11 +347,19 @@ class UtilisateursPage(QWidget):
             actif=self.case_actif.isChecked()
         )
         session.add(nouvel_utilisateur)
+        session.flush()
+
+        enregistrer_historique(
+            session, self.utilisateur_connecte, "Création", "Utilisateur", nouvel_utilisateur.id,
+            f"Création du compte « {username} » (rôle : {self.combo_role.currentText()})."
+        )
+
         session.commit()
         session.close()
 
         self._reinitialiser_formulaire()
         self._charger_utilisateurs()
+        self._charger_historique()
 
     def _modifier_utilisateur(self):
         username = self.champ_username.text().strip()
@@ -325,21 +390,39 @@ class UtilisateursPage(QWidget):
                     QMessageBox.warning(self, "Action refusée", "Impossible de désactiver le dernier administrateur actif.")
                     return
 
+        ancien_role_nom = user.role.nom if user.role else "—"
+        ancien_actif = user.actif
+        nouveau_role_id = self.combo_role.currentData()
+        nouveau_actif = self.case_actif.isChecked()
+
+        changements = []
+        if user.username != username:
+            changements.append(f"nom d'utilisateur « {user.username} » → « {username} »")
+        if user.role_id != nouveau_role_id:
+            changements.append(f"rôle « {ancien_role_nom} » → « {self.combo_role.currentText()} »")
+        if ancien_actif != nouveau_actif:
+            changements.append("compte activé" if nouveau_actif else "compte désactivé")
+
         user.username = username
         user.nom_complet = self.champ_nom_complet.text().strip() or None
         user.email = self.champ_email.text().strip() or None
-        user.role_id = self.combo_role.currentData()
-        user.actif = self.case_actif.isChecked()
+        user.role_id = nouveau_role_id
+        user.actif = nouveau_actif
 
         nouveau_mdp = self.champ_mdp.text()
         if nouveau_mdp:
             user.password_hash = bcrypt.hashpw(nouveau_mdp.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            changements.append("mot de passe changé")
+
+        description = f"Modification de « {username} »" + (f" : {', '.join(changements)}." if changements else " (aucun changement de valeur).")
+        enregistrer_historique(session, self.utilisateur_connecte, "Modification", "Utilisateur", user.id, description)
 
         session.commit()
         session.close()
 
         self._reinitialiser_formulaire()
         self._charger_utilisateurs()
+        self._charger_historique()
 
     def _reinitialiser_mot_de_passe(self):
         ligne = self._ligne_selectionnee()
@@ -362,7 +445,14 @@ class UtilisateursPage(QWidget):
         session = SessionLocal()
         user = session.query(User).filter_by(id=user_id).first()
         user.password_hash = bcrypt.hashpw(nouveau_mdp.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+        enregistrer_historique(
+            session, self.utilisateur_connecte, "Réinitialisation mot de passe", "Utilisateur", user.id,
+            f"Mot de passe réinitialisé pour « {username} »."
+        )
+
         session.commit()
         session.close()
 
+        self._charger_historique()
         QMessageBox.information(self, "Mot de passe réinitialisé", f"Nouveau mot de passe temporaire : {nouveau_mdp}")
