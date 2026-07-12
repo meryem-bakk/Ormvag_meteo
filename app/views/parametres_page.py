@@ -1,6 +1,5 @@
 import os
 import re
-import subprocess
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -13,6 +12,7 @@ from dotenv import find_dotenv, set_key
 from app.database import SessionLocal
 from app.models.user import User
 from app.services.historique import enregistrer as enregistrer_historique
+from app.services.sauvegarde import trouver_pg_dump, executer_pg_dump
 
 
 class ParametresPage(QWidget):
@@ -230,8 +230,9 @@ class ParametresPage(QWidget):
         layout.addWidget(titre)
 
         description = QLabel(
-            "Génère une copie complète de la base (stations, mesures, indicateurs, utilisateurs) "
-            "sous forme de fichier .sql, à conserver en lieu sûr."
+            "Une sauvegarde automatique est déjà générée chaque jour à 6h00 dans le dossier "
+            "« Sauvegardes/ » (les 14 plus récentes sont conservées, les plus anciennes supprimées). "
+            "Le bouton ci-dessous permet en plus de créer une sauvegarde manuelle à l'emplacement de ton choix."
         )
         description.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         description.setWordWrap(True)
@@ -249,25 +250,8 @@ class ParametresPage(QWidget):
 
         return bloc
 
-    def _trouver_pg_dump(self):
-        # Priorité : variable d'environnement si définie
-        chemin_env = os.getenv("PG_DUMP_PATH")
-        if chemin_env and os.path.exists(chemin_env):
-            return chemin_env
-
-        # Recherche dans les emplacements standards d'installation Windows
-        base = r"C:\Program Files\PostgreSQL"
-        if os.path.isdir(base):
-            for version in sorted(os.listdir(base), reverse=True):
-                chemin_possible = os.path.join(base, version, "bin", "pg_dump.exe")
-                if os.path.exists(chemin_possible):
-                    return chemin_possible
-
-        return None
-
     def _creer_sauvegarde(self):
-        pg_dump = self._trouver_pg_dump()
-        if not pg_dump:
+        if not trouver_pg_dump():
             QMessageBox.critical(
                 self, "pg_dump introuvable",
                 "L'outil pg_dump.exe n'a pas été trouvé automatiquement.\n\n"
@@ -275,18 +259,6 @@ class ParametresPage(QWidget):
                 "en indiquant le chemin exact (généralement dans le dossier bin de ton installation PostgreSQL)."
             )
             return
-
-        database_url = os.getenv("DATABASE_URL", "")
-        correspondance = re.match(
-            r"postgresql\+?\w*://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)",
-            database_url
-        )
-        if not correspondance:
-            QMessageBox.critical(self, "Erreur", "Impossible de lire les informations de connexion depuis .env.")
-            return
-
-        utilisateur_db, mot_de_passe_db, hote, port, nom_base = correspondance.groups()
-        port = port or "5432"
 
         nom_fichier_defaut = f"sauvegarde_ormvag_{datetime.now().strftime('%Y%m%d_%H%M')}.sql"
         chemin, _ = QFileDialog.getSaveFileName(self, "Enregistrer la sauvegarde", nom_fichier_defaut, "Fichier SQL (*.sql)")
@@ -296,25 +268,13 @@ class ParametresPage(QWidget):
         self.label_statut_sauvegarde.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         self.label_statut_sauvegarde.setText("Sauvegarde en cours...")
 
-        environnement = os.environ.copy()
-        environnement["PGPASSWORD"] = mot_de_passe_db
+        succes, message = executer_pg_dump(chemin)
 
-        try:
-            resultat = subprocess.run(
-                [pg_dump, "-h", hote, "-p", port, "-U", utilisateur_db, "-F", "p", "-f", chemin, nom_base],
-                env=environnement, capture_output=True, text=True, timeout=120
-            )
-
-            if resultat.returncode == 0:
-                self.label_statut_sauvegarde.setStyleSheet("color: #27ae60; font-size: 12px;")
-                self.label_statut_sauvegarde.setText(f"Sauvegarde créée : {chemin}")
-                QMessageBox.information(self, "Sauvegarde réussie", f"Fichier enregistré :\n{chemin}")
-            else:
-                self.label_statut_sauvegarde.setStyleSheet("color: #c0392b; font-size: 12px;")
-                self.label_statut_sauvegarde.setText("Échec de la sauvegarde.")
-                QMessageBox.critical(self, "Erreur", f"pg_dump a échoué :\n{resultat.stderr}")
-
-        except Exception as e:
+        if succes:
+            self.label_statut_sauvegarde.setStyleSheet("color: #27ae60; font-size: 12px;")
+            self.label_statut_sauvegarde.setText(f"Sauvegarde créée : {chemin}")
+            QMessageBox.information(self, "Sauvegarde réussie", f"Fichier enregistré :\n{chemin}")
+        else:
             self.label_statut_sauvegarde.setStyleSheet("color: #c0392b; font-size: 12px;")
-            self.label_statut_sauvegarde.setText("Erreur lors de la sauvegarde.")
-            QMessageBox.critical(self, "Erreur", str(e))
+            self.label_statut_sauvegarde.setText("Échec de la sauvegarde.")
+            QMessageBox.critical(self, "Erreur", f"La sauvegarde a échoué :\n{message}")
