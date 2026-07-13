@@ -14,9 +14,12 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QPushButton, QLabel, QStackedWidget, QFrame
+    QPushButton, QLabel, QStackedWidget, QFrame, QApplication
 )
 from PySide6.QtCore import Qt
+
+# Pages enregistrées pour le rafraîchissement auto (event_bus) une fois construites.
+NOMS_PAGES_RAFRAICHISSABLES = {"Prévisions", "Paramètres"}
 
 
 class MainWindow(QMainWindow):
@@ -26,6 +29,36 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ORMVAG Météo Manager")
         self.resize(1200, 750)
         self._build_ui()
+
+    def _fabrique_page(self, nom_page):
+        """Retourne la fonction qui construira la page à la demande. Chargement
+        paresseux : Prévisions et Indicateurs chargent des modèles IA (TensorFlow,
+        Isolation Forest) coûteux à construire toutes en même temps dès la
+        connexion — les construire seulement au premier clic évite un blocage
+        de l'interface ("Ne répond pas") juste après le login."""
+        if nom_page == "Tableau de bord":
+            return DashboardPage
+        if nom_page == "Stations":
+            return StationsPage
+        if nom_page == "Graphiques":
+            return GraphiquesPage
+        if nom_page == "Données":
+            return DonneesPage
+        if nom_page == "Utilisateurs":
+            return lambda: UtilisateursPage(self.utilisateur)
+        if nom_page == "Carte":
+            return CartePage
+        if nom_page == "Import des données":
+            return ImportPage
+        if nom_page == "Indicateurs agroclimatiques":
+            return IndicateursPage
+        if nom_page == "Prévisions":
+            return PrevisionsPage
+        if nom_page == "Rapports":
+            return RapportsPage
+        if nom_page == "Paramètres":
+            return lambda: ParametresPage(self.utilisateur)
+        return lambda: self._creer_page_vide(nom_page)
 
     def _build_ui(self):
         conteneur = QWidget()
@@ -65,41 +98,23 @@ class MainWindow(QMainWindow):
         ]
 
         self.pages_refs = {}
+        self._fabriques_pages = {}
+        self._noms_pages = {}
+        self._pages_construites = set()
+
         for nom_page in pages_navigation:
             bouton = QPushButton(nom_page)
             bouton.setCursor(Qt.PointingHandCursor)
             bouton.setStyleSheet(self._style_bouton_sidebar(False))
-            bouton.clicked.connect(lambda checked=False, i=self.pages.count(), btn=bouton: self._changer_page(i, btn))
+            index = self.pages.count()
+            bouton.clicked.connect(lambda checked=False, i=index, btn=bouton: self._changer_page(i, btn))
             layout_sidebar.addWidget(bouton)
             self.boutons_sidebar.append(bouton)
 
-            if nom_page == "Tableau de bord":
-                page = DashboardPage()
-            elif nom_page == "Stations":
-                page = StationsPage()
-            elif nom_page == "Graphiques":
-                page = GraphiquesPage()
-            elif nom_page == "Données":
-                page = DonneesPage()
-            elif nom_page == "Utilisateurs":
-                page = UtilisateursPage(self.utilisateur)
-            elif nom_page == "Carte":
-                page = CartePage()
-            elif nom_page == "Import des données":
-                page = ImportPage()
-            elif nom_page == "Indicateurs agroclimatiques":
-                page = IndicateursPage()
-            elif nom_page == "Prévisions":
-                page = PrevisionsPage()
-                self.pages_refs[nom_page] = page
-            elif nom_page == "Rapports":
-                page = RapportsPage()
-            elif nom_page == "Paramètres":
-                page = ParametresPage(self.utilisateur)
-                self.pages_refs[nom_page] = page
-            else:
-                page = self._creer_page_vide(nom_page)
-            self.pages.addWidget(page)
+            self._fabriques_pages[index] = self._fabrique_page(nom_page)
+            self._noms_pages[index] = nom_page
+            self.pages.addWidget(self._creer_page_chargement())
+
         self.label_derniere_maj = QLabel("Dernière mise à jour auto : jamais")
         self.label_derniere_maj.setStyleSheet("color: #85a9c4; font-size: 10px; padding: 4px 16px;")
         self.label_derniere_maj.setWordWrap(True)
@@ -118,7 +133,16 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(conteneur)
         self._changer_page(0, self.boutons_sidebar[0])
-    
+
+    def _creer_page_chargement(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        label = QLabel("Chargement...")
+        label.setStyleSheet("color: #7f8c8d; font-size: 14px; padding: 24px;")
+        layout.addWidget(label)
+        layout.addStretch()
+        return page
+
     def _rafraichir_toutes_les_pages(self):
         for nom_page, page in self.pages_refs.items():
             if hasattr(page, "rafraichir_donnees"):
@@ -132,7 +156,28 @@ class MainWindow(QMainWindow):
         )
 
     def _changer_page(self, index, bouton):
+        self._mettre_a_jour_bouton_actif(bouton)
+
+        if index not in self._pages_construites:
+            # Affiche d'abord le placeholder "Chargement..." et force son rendu,
+            # sinon Qt ne rafraîchit l'écran qu'après la construction (potentiellement
+            # longue pour les pages IA), donnant l'impression que l'app est figée.
+            self.pages.setCurrentIndex(index)
+            QApplication.processEvents()
+
+            nom_page = self._noms_pages[index]
+            page = self._fabriques_pages[index]()
+            ancienne = self.pages.widget(index)
+            self.pages.removeWidget(ancienne)
+            ancienne.deleteLater()
+            self.pages.insertWidget(index, page)
+            self._pages_construites.add(index)
+            if nom_page in NOMS_PAGES_RAFRAICHISSABLES:
+                self.pages_refs[nom_page] = page
+
         self.pages.setCurrentIndex(index)
+
+    def _mettre_a_jour_bouton_actif(self, bouton):
         if self.bouton_sidebar_actif is not None and self.bouton_sidebar_actif is not bouton:
             self.bouton_sidebar_actif.setStyleSheet(self._style_bouton_sidebar(False))
         bouton.setStyleSheet(self._style_bouton_sidebar(True))
