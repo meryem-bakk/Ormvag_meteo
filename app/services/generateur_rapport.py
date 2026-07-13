@@ -1,7 +1,9 @@
 import os
+import calendar
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
+from sqlalchemy import func
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
@@ -397,174 +399,485 @@ def generer_pdf_synthese(chemin_sortie, date_debut, date_fin, df_synthese, graph
     doc.build(elements)
 
 
-def recuperer_rapport_journalier(date_fin=None):
-    """Synthèse du dernier cycle agrométéorologique complet (6h00 à 6h00, convention
-    OMM) par station, triée par cumul de pluie décroissant. La fenêtre est calée sur
-    6h00 quelle que soit l'heure réelle d'exécution — un rattrapage tardif (app ouverte
-    à 8h ou plus tard) couvre donc toujours exactement le même cycle 6h-6h qu'une
-    exécution pile à l'heure, plutôt que "les 24h avant maintenant"."""
+PROVINCES_ORDRE = ["Kénitra", "Sidi Kacem", "Sidi Slimane"]
+
+# Normales pluviométriques mensuelles (moyenne sur 30 ans), réseau ORMVAG. Notre base
+# ne remonte qu'à 2016 (~10 ans) : on ne peut donc pas calculer une vraie normale 30 ans
+# nous-mêmes. Valeurs reprises telles quelles du bulletin officiel SED "RELEVE DES
+# PRECIPITATIONS POUR LA CAMPAGNE AGRICOLE" (fichier "Pluviométrie ORMVAG au
+# 18-03-2026", table "30 ans"). À mettre à jour manuellement si le SED communique une
+# normale révisée.
+NORMALE_30_ANS_MENSUELLE = {
+    "SEP": 14.748333333333335, "OCT": 52.695277777777775, "NOV": 81.00027777777777,
+    "DEC": 82.55555555555554, "JAN": 78.65394444444445, "FEV": 49.58583333333333,
+    "MAR": 60.941944444444445, "AVR": 39.66749999999999, "MAI": 21.793055555555558,
+    "JUN": 2.831666666666666, "JUIL": 0.7299999999999999, "AOUT": 0.9338888888888888,
+}
+
+_LIBELLE_MOIS = {9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC", 1: "JAN", 2: "FEV",
+                  3: "MAR", 4: "AVR", 5: "MAI", 6: "JUN", 7: "JUIL", 8: "AOUT"}
+_ORDRE_MOIS_CAMPAGNE = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]
+
+# Seuils utilisés pour détecter automatiquement le début de la "période pluvieuse" en
+# cours (bloc du bulletin SED sans définition officielle disponible) : on remonte
+# jour par jour depuis la fin du cycle et on considère que l'épisode pluvieux précédent
+# est terminé dès qu'on rencontre ce nombre de jours consécutifs sous ce seuil.
+SEUIL_JOUR_SEC_MM = 0.1
+MIN_JOURS_SECS_FIN_EPISODE = 3
+MAX_JOURS_RECHERCHE_EPISODE = 90
+
+
+def _annee_campagne(date_fin):
+    """Campagne agricole ORMVAG : du 1er septembre au 31 août. Renvoie
+    (année de début, libellé "2025/2026") pour la campagne en cours à `date_fin`."""
+    annee_debut = date_fin.year if date_fin.month >= 9 else date_fin.year - 1
+    return annee_debut, f"{annee_debut}/{annee_debut + 1}"
+
+
+def _cumul_reseau_periode(session, station_ids, jour_debut, jour_fin):
+    """Cumul de pluie (mm) moyenné sur les stations données, entre `jour_debut` et
+    `jour_fin` inclus (les mesures sont journalières, un enregistrement par jour)."""
+    if not station_ids or jour_debut > jour_fin:
+        return 0.0
+    total = session.query(func.sum(Mesure.pluie)).filter(
+        Mesure.station_id.in_(station_ids),
+        Mesure.date_heure >= datetime.combine(jour_debut, time.min),
+        Mesure.date_heure <= datetime.combine(jour_fin, time.min),
+    ).scalar()
+    return float(total) / len(station_ids) if total is not None else 0.0
+
+
+def _cumul_station_periode(session, station_id, jour_debut, jour_fin):
+    """Cumul de pluie (mm) d'une station entre `jour_debut` et `jour_fin` inclus."""
+    if jour_debut > jour_fin:
+        return 0.0
+    total = session.query(func.sum(Mesure.pluie)).filter(
+        Mesure.station_id == station_id,
+        Mesure.date_heure >= datetime.combine(jour_debut, time.min),
+        Mesure.date_heure <= datetime.combine(jour_fin, time.min),
+    ).scalar()
+    return float(total) if total is not None else 0.0
+
+
+def _pluie_reseau_mois(session, station_ids, annee, mois):
+    """Cumul de pluie réseau (mm) pour un mois calendaire complet, ou None si aucune
+    mesure n'existe pour ce mois (mois futur pas encore atteint)."""
+    dernier_jour = calendar.monthrange(annee, mois)[1]
+    debut, fin = date(annee, mois, 1), date(annee, mois, dernier_jour)
+    nb = session.query(func.count(Mesure.id)).filter(
+        Mesure.station_id.in_(station_ids),
+        Mesure.date_heure >= datetime.combine(debut, time.min),
+        Mesure.date_heure <= datetime.combine(fin, time.min),
+    ).scalar()
+    if not nb:
+        return None
+    return _cumul_reseau_periode(session, station_ids, debut, fin)
+
+
+def _debut_periode_pluvieuse(session, station_ids, jour_fin):
+    """Détecte le début de l'épisode pluvieux en cours, en remontant jour par jour
+    depuis `jour_fin` jusqu'à rencontrer MIN_JOURS_SECS_FIN_EPISODE jours consécutifs
+    sous SEUIL_JOUR_SEC_MM (moyenne réseau), ce qui marque la limite avec l'épisode
+    précédent. Heuristique documentée en l'absence d'une définition officielle du SED."""
+    debut = jour_fin
+    jours_secs_consecutifs = 0
+    curseur = jour_fin
+    for _ in range(MAX_JOURS_RECHERCHE_EPISODE):
+        pluie_jour = _cumul_reseau_periode(session, station_ids, curseur, curseur)
+        if pluie_jour > SEUIL_JOUR_SEC_MM:
+            debut = curseur
+            jours_secs_consecutifs = 0
+        else:
+            jours_secs_consecutifs += 1
+            if jours_secs_consecutifs >= MIN_JOURS_SECS_FIN_EPISODE:
+                break
+        curseur -= timedelta(days=1)
+    return debut
+
+
+def _construire_tableaux_mensuels(session, station_ids, date_fin, annee_debut_campagne):
+    """Construit les deux tableaux mensuels du bulletin (pluie mensuelle et pluie
+    cumulative) pour les mois écoulés de la campagne, avec 3 séries : année en cours,
+    année n-1 (mêmes mois, pour comparaison), et normale 30 ans (mois courant proratisé
+    au nombre de jours écoulés)."""
+    mois_ecoules = []
+    for mois in _ORDRE_MOIS_CAMPAGNE:
+        annee = annee_debut_campagne if mois >= 9 else annee_debut_campagne + 1
+        if (annee, mois) > (date_fin.year, date_fin.month):
+            break
+        mois_ecoules.append((annee, mois))
+
+    lignes_mensuel, lignes_cumul = [], []
+    cumul_n = cumul_n1 = cumul_normale = 0.0
+
+    for annee, mois in mois_ecoules:
+        libelle = _LIBELLE_MOIS[mois]
+        est_mois_courant = (annee == date_fin.year and mois == date_fin.month)
+        dernier_jour_mois = calendar.monthrange(annee, mois)[1]
+
+        if est_mois_courant:
+            valeur_n = _cumul_reseau_periode(session, station_ids, date(annee, mois, 1), date_fin.date())
+        else:
+            valeur_n = _pluie_reseau_mois(session, station_ids, annee, mois) or 0.0
+
+        annee_n1 = annee - 1
+        if est_mois_courant:
+            jour_fin_n1 = date(annee_n1, mois, min(date_fin.day, calendar.monthrange(annee_n1, mois)[1]))
+            valeur_n1 = _cumul_reseau_periode(session, station_ids, date(annee_n1, mois, 1), jour_fin_n1)
+        else:
+            valeur_n1 = _pluie_reseau_mois(session, station_ids, annee_n1, mois)
+
+        normale_mois = NORMALE_30_ANS_MENSUELLE.get(libelle, 0.0)
+        if est_mois_courant:
+            valeur_normale = round(normale_mois * date_fin.day / dernier_jour_mois, 1)
+        else:
+            valeur_normale = normale_mois
+
+        cumul_n += valeur_n
+        cumul_normale += valeur_normale
+        lignes_mensuel.append({
+            "mois": libelle, "annee_n": round(valeur_n, 1),
+            "annee_n1": round(valeur_n1, 1) if valeur_n1 is not None else None,
+            "normale": round(valeur_normale, 1),
+        })
+
+        if valeur_n1 is not None:
+            cumul_n1 += valeur_n1
+        lignes_cumul.append({
+            "mois": libelle, "annee_n": round(cumul_n, 1),
+            "annee_n1": round(cumul_n1, 1) if valeur_n1 is not None else None,
+            "normale": round(cumul_normale, 1),
+        })
+
+    return {"mensuel": lignes_mensuel, "cumulatif": lignes_cumul}
+
+
+def recuperer_releve_precipitations(date_fin=None):
+    """Relevé des précipitations au format officiel SED "RELEVE DES PRECIPITATIONS
+    POUR LA CAMPAGNE AGRICOLE" : par station, groupée par province avec moyennes —
+    pluie des dernières 24h, de la période pluvieuse en cours, de la campagne agricole
+    en cours (depuis le 1er septembre) et de la campagne n-1 à la même date. La fenêtre
+    24h est calée sur le cycle 6h00-6h00 (convention OMM), quelle que soit l'heure
+    réelle d'exécution. Retourne (df, infos, tableau_mensuel)."""
     if date_fin is None:
         maintenant = datetime.now()
         reference_6h = maintenant.replace(hour=6, minute=0, second=0, microsecond=0)
         date_fin = reference_6h if maintenant >= reference_6h else reference_6h - timedelta(days=1)
-    date_debut = date_fin - timedelta(hours=24)
-    date_debut_30j = date_fin - timedelta(days=30)
+    jour_fin = date_fin.date()
+
+    annee_debut_campagne, libelle_campagne = _annee_campagne(date_fin)
+    debut_campagne_n = date(annee_debut_campagne, 9, 1)
+    debut_campagne_n1 = date(annee_debut_campagne - 1, 9, 1)
+    try:
+        jour_fin_n1 = jour_fin.replace(year=jour_fin.year - 1)
+    except ValueError:  # 29 février
+        jour_fin_n1 = jour_fin.replace(year=jour_fin.year - 1, day=28)
 
     session = SessionLocal()
     stations = session.query(Station).filter_by(actif=True).order_by(Station.province, Station.nom).all()
+    station_ids = [s.id for s in stations]
+
+    debut_periode_pluvieuse = _debut_periode_pluvieuse(session, station_ids, jour_fin)
 
     lignes = []
     for station in stations:
-        mesures_30j = session.query(Mesure).filter(
-            Mesure.station_id == station.id,
-            Mesure.date_heure >= date_debut_30j,
-            Mesure.date_heure <= date_fin,
-        ).all()
-
-        if not mesures_30j:
-            continue
-
-        mesures = [m for m in mesures_30j if m.date_heure >= date_debut]
-        if not mesures:
-            continue
-
-        temperatures = [m.temperature for m in mesures if m.temperature is not None]
-        temp_mins = [m.temperature_min for m in mesures if m.temperature_min is not None]
-        temp_maxs = [m.temperature_max for m in mesures if m.temperature_max is not None]
-        humidites = [m.humidite for m in mesures if m.humidite is not None]
-        vents = [m.vent for m in mesures if m.vent is not None]
-        pluies = [m.pluie or 0 for m in mesures]
-        pluies_30j = [m.pluie or 0 for m in mesures_30j]
-
         lignes.append({
             "Station": station.nom,
             "Province": station.province or "Non classée",
-            "Cumul pluie 24h (mm)": round(float(sum(pluies)), 1),
-            "Cumul pluie 30j (mm)": round(sum(pluies_30j), 1),
-            "Temp. min (°C)": round(min(temp_mins), 1) if temp_mins else None,
-            "Temp. moyenne (°C)": round(sum(temperatures) / len(temperatures), 1) if temperatures else None,
-            "Temp. max (°C)": round(max(temp_maxs), 1) if temp_maxs else None,
-            "Hum. moyenne (%)": round(sum(humidites) / len(humidites), 1) if humidites else None,
-            "Vent moyen (km/h)": round(sum(vents) / len(vents), 1) if vents else None,
+            "Pluie 24h (mm)": round(_cumul_station_periode(session, station.id, jour_fin, jour_fin), 1),
+            "Pluie période pluvieuse (mm)": round(
+                _cumul_station_periode(session, station.id, debut_periode_pluvieuse, jour_fin), 1),
+            "Pluie campagne n (mm)": round(
+                _cumul_station_periode(session, station.id, debut_campagne_n, jour_fin), 1),
+            "Pluie campagne n-1 (mm)": round(
+                _cumul_station_periode(session, station.id, debut_campagne_n1, jour_fin_n1), 1),
         })
 
-    session.close()
-
     df = pd.DataFrame(lignes)
-    if not df.empty:
-        df = df.sort_values(["Province", "Cumul pluie 24h (mm)"], ascending=[True, False]).reset_index(drop=True)
-    return df, date_debut, date_fin
+
+    infos = {
+        "date_fin": date_fin,
+        "jour_fin": jour_fin,
+        "libelle_campagne": libelle_campagne,
+        "annee_debut_campagne": annee_debut_campagne,
+        "debut_periode_pluvieuse": debut_periode_pluvieuse,
+        "debut_campagne_n": debut_campagne_n,
+        "debut_campagne_n1": debut_campagne_n1,
+        "jour_fin_n1": jour_fin_n1,
+    }
+
+    tableau_mensuel = _construire_tableaux_mensuels(session, station_ids, date_fin, annee_debut_campagne)
+
+    session.close()
+    return df, infos, tableau_mensuel
 
 
-def generer_graphiques_rapport_journalier(df):
-    """Deux graphiques comparant les stations entre elles pour le jour couvert :
-    cumul de pluie 24h, et températures (min/moyenne/max)."""
-    if df.empty:
-        return None
+def _ecrire_tableau_mensuel(ws, ligne_debut, titre, lignes_mois, annee_debut_campagne,
+                             couleur_fond, bordure):
+    """Écrit un tableau mensuel (mois en colonnes, 3 lignes année n / n-1 / normale) et
+    renvoie (ligne_suivante, ligne_mois, lignes_series, nb_mois) — ces repères de
+    cellules servent ensuite à brancher un graphique Excel natif dessus, comme dans le
+    fichier source (bulletin SED)."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border
 
-    df_tri = df.sort_values("Cumul pluie 24h (mm)", ascending=False).reset_index(drop=True)
-    x = np.arange(len(df_tri))
+    cell_titre = ws.cell(row=ligne_debut, column=1, value=titre)
+    cell_titre.font = Font(bold=True, size=10)
+    cell_titre.fill = PatternFill(fill_type="solid", fgColor=couleur_fond)
+    cell_titre.border = Border(bottom=bordure)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 9))
+    for j, ligne_mois in enumerate(lignes_mois, start=2):
+        cell = ws.cell(row=ligne_debut, column=j, value=ligne_mois["mois"])
+        cell.font = Font(bold=True, size=9)
+        cell.alignment = Alignment(horizontal="center")
+        cell.fill = PatternFill(fill_type="solid", fgColor=couleur_fond)
+        cell.border = Border(bottom=bordure)
 
-    ax1.bar(x, df_tri["Cumul pluie 24h (mm)"], color="#5d7a94")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(df_tri["Station"], rotation=60, ha="right", fontsize=8)
-    ax1.set_ylabel("Pluie 24h (mm)", fontsize=9)
-    ax1.set_title("Cumul de précipitations par station (24 dernières heures)", fontsize=11)
-    ax1.grid(axis="y", alpha=0.3)
+    annee_n, annee_n1 = annee_debut_campagne, annee_debut_campagne - 1
+    lignes_labels = [
+        (f"année n ({str(annee_n)[-2:]}/{str(annee_n + 1)[-2:]})", "annee_n"),
+        (f"année n-1 ({str(annee_n1)[-2:]}/{str(annee_n1 + 1)[-2:]})", "annee_n1"),
+        ("normale (30 ans)", "normale"),
+    ]
+    lignes_series = []
+    for i, (label, cle) in enumerate(lignes_labels):
+        r = ligne_debut + 1 + i
+        lignes_series.append(r)
+        cell_label = ws.cell(row=r, column=1, value=label)
+        cell_label.font = Font(bold=True, size=8)
+        cell_label.alignment = Alignment(horizontal="right")
+        for j, ligne_mois in enumerate(lignes_mois, start=2):
+            cell = ws.cell(row=r, column=j, value=ligne_mois.get(cle))
+            cell.number_format = "0.0"
+            cell.font = Font(size=8)
+            cell.alignment = Alignment(horizontal="center")
 
-    largeur = 0.25
-    ax2.bar(x - largeur, df_tri["Temp. min (°C)"], width=largeur, label="Min", color="#5d7a94")
-    ax2.bar(x, df_tri["Temp. moyenne (°C)"], width=largeur, label="Moyenne", color="#2c3e50")
-    ax2.bar(x + largeur, df_tri["Temp. max (°C)"], width=largeur, label="Max", color="#e67e22")
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(df_tri["Station"], rotation=60, ha="right", fontsize=8)
-    ax2.set_ylabel("Température (°C)", fontsize=9)
-    ax2.set_title("Températures par station", fontsize=11)
-    ax2.legend(fontsize=8)
-    ax2.grid(axis="y", alpha=0.3)
-
-    fig.tight_layout()
-
-    buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=150)
-    plt.close(fig)
-    buffer.seek(0)
-    return buffer
+    ligne_suivante = ligne_debut + 1 + len(lignes_labels)
+    return ligne_suivante, ligne_debut, lignes_series, len(lignes_mois)
 
 
-def generer_excel_rapport_journalier(chemin_sortie, df, date_debut, date_fin):
+COULEURS_SERIES_CAMPAGNE = ["4472C4", "F4B183", "A9D18E"]  # année n, année n-1, normale
+
+
+def _couleur_texte_contrastee(hex_couleur):
+    """Blanc sur fond foncé, gris foncé sur fond clair — pour garantir que le texte
+    reste lisible quelle que soit la couleur de fond (badge ou étiquette)."""
+    r, g, b = int(hex_couleur[0:2], 16), int(hex_couleur[2:4], 16), int(hex_couleur[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "FFFFFF" if luminance < 0.6 else "1A1A1A"
+
+
+def _proprietes_texte_etiquette(couleur_hex):
+    from openpyxl.chart.text import RichText
+    from openpyxl.drawing.text import (
+        RichTextProperties, Paragraph, ParagraphProperties, CharacterProperties,
+    )
+
+    proprietes_police = CharacterProperties(sz=900, b=True, solidFill=couleur_hex)
+    return RichText(
+        bodyPr=RichTextProperties(),
+        p=[Paragraph(pPr=ParagraphProperties(defRPr=proprietes_police), endParaRPr=proprietes_police)],
+    )
+
+
+def _ajouter_graphique_mensuel(ws, titre, ligne_mois, lignes_series, nb_mois, ancre):
+    """Graphique Excel natif (barres groupées, couleurs par série, étiquettes de valeurs
+    au-dessus des barres, légende en haut) branché directement sur les cellules du
+    tableau mensuel — comme dans le fichier source (bulletin SED), au lieu d'une image
+    statique : il se met à jour si les cellules sont modifiées."""
+    from openpyxl.chart import BarChart, Reference
+    from openpyxl.chart.label import DataLabelList
+
+    graphique = BarChart()
+    graphique.type = "col"
+    graphique.grouping = "clustered"
+    graphique.gapWidth = 60
+    graphique.height = 8.5
+    graphique.width = 22
+    graphique.title = titre
+    graphique.y_axis.title = "mm"
+    # Légende en bas plutôt qu'en haut, pour ne pas se superposer/coller au titre.
+    graphique.legend.position = "b"
+    graphique.legend.overlay = False
+    graphique.x_axis.delete = False
+    graphique.x_axis.tickLblPos = "nextTo"
+
+    categories = Reference(ws, min_col=2, max_col=1 + nb_mois, min_row=ligne_mois, max_row=ligne_mois)
+    for r in lignes_series:
+        donnees = Reference(ws, min_col=1, max_col=1 + nb_mois, min_row=r, max_row=r)
+        graphique.add_data(donnees, titles_from_data=True, from_rows=True)
+    graphique.set_categories(categories)
+
+    for i, serie in enumerate(graphique.series):
+        couleur = COULEURS_SERIES_CAMPAGNE[i % len(COULEURS_SERIES_CAMPAGNE)]
+        serie.graphicalProperties.solidFill = couleur
+        serie.graphicalProperties.line.noFill = True
+        # dLblPos="outEnd" place l'étiquette juste au-dessus de la barre, sur fond blanc
+        # (pas centrée dans la barre) : sinon le texte fonçé devient illisible sur les
+        # barres bleu/vert foncées. showCatName/showSerName/showLegendKey doivent être
+        # explicitement à False, sinon certains lecteurs Excel affichent le nom complet
+        # de la série et de la catégorie à côté de chaque valeur (texte géant illisible).
+        serie.dLbls = DataLabelList(
+            dLblPos="outEnd",
+            showVal=True,
+            showCatName=False,
+            showSerName=False,
+            showLegendKey=False,
+            showPercent=False,
+            showBubbleSize=False,
+        )
+        serie.dLbls.numFmt = "0.0"
+        serie.dLbls.txPr = _proprietes_texte_etiquette(couleur)
+
+    ws.add_chart(graphique, ancre)
+
+
+def _ajouter_badges_totaux(ws, ligne, colonne_debut, valeurs):
+    """Petits badges colorés au-dessus du graphique, affichant le cumul total de chaque
+    série (fin de campagne à date) — reproduit les pastilles de synthèse du bulletin SED."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    bordure = Border(*(Side(style="thin", color="8a97a0"),) * 4)
+    col = colonne_debut
+    for valeur, couleur in zip(valeurs, COULEURS_SERIES_CAMPAGNE):
+        ws.merge_cells(start_row=ligne, start_column=col, end_row=ligne + 1, end_column=col + 1)
+        cell = ws.cell(row=ligne, column=col)
+        cell.value = f"{valeur:.1f} mm" if valeur is not None else "—"
+        cell.font = Font(bold=True, size=14, color=_couleur_texte_contrastee(couleur))
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.fill = PatternFill(fill_type="solid", fgColor=couleur)
+        cell.border = bordure
+        ws.row_dimensions[ligne].height = 22
+        ws.row_dimensions[ligne + 1].height = 22
+        col += 2
+
+
+def generer_excel_releve_precipitations(chemin_sortie, df, infos, tableau_mensuel):
     from openpyxl import Workbook
-    from openpyxl.drawing.image import Image as ImageExcel
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    COULEUR_ENTETE_HEX = "1A5276"
-    COULEUR_PROVINCE_HEX = "DDE6ED"
+    COULEUR_PROVINCE_HEX = "FCE4D6"   # tint clair Accent2 : moyenne par province
+    COULEUR_ORMVAG_HEX = "DEEBF7"     # tint clair Accent5 : ligne totale réseau
+    COULEUR_SECTION_HEX = "E2EFDA"    # tint clair Accent6 : en-têtes tableaux mensuels
+    COULEUR_TITRE_HEX = "1A5276"
+    COULEUR_ORMVAG_TEXTE = "0070C0"
+    bordure_moyenne = Side(style="medium", color="595959")
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Rapport journalier"
+    ws.title = f"Precip_{infos['jour_fin'].strftime('%m_%y')}"
 
-    ws["A1"] = "ORMVAG — Rapport météorologique journalier"
-    ws["A1"].font = Font(bold=True, size=14, color=COULEUR_ENTETE_HEX)
-    ws["A2"] = (f"Période couverte : {date_debut.strftime('%d/%m/%Y %H:%M')} → "
-                f"{date_fin.strftime('%d/%m/%Y %H:%M')} (24 dernières heures)")
+    ws["A1"] = "ORMVAG / DDA / SED"
+    ws["A1"].font = Font(bold=True, size=10)
+    ws.merge_cells("A2:E2")
+    ws["A2"] = f"RELEVE DES PRECIPITATIONS POUR LA CAMPAGNE AGRICOLE {infos['libelle_campagne']}"
+    ws["A2"].font = Font(bold=True, size=14, color=COULEUR_TITRE_HEX)
+    ws["A2"].alignment = Alignment(horizontal="center")
     ws["A3"] = f"Généré automatiquement le {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
+    ws["A3"].font = Font(size=8, italic=True, color="8a97a0")
+
+    entetes = ["STATIONS", "Pluie 24H (mm)", "Pluie période pluvieuse (mm)",
+               "Pluie campagne (n) (mm)", "Pluie campagne (n-1) (mm)"]
+    sous_entetes = [
+        "",
+        f"au {infos['jour_fin'].strftime('%d-%m-%Y')} à 6h",
+        f"{infos['debut_periode_pluvieuse'].strftime('%d-%m-%Y')} au "
+        f"{infos['jour_fin'].strftime('%d-%m-%Y')} à 6h",
+        f"au {infos['jour_fin'].strftime('%d-%m-%Y')} à 6h",
+        f"au {infos['jour_fin_n1'].strftime('%d-%m-%Y')} à 6h",
+    ]
+
+    ligne_entete = 5
+    for j, (entete, sous) in enumerate(zip(entetes, sous_entetes), start=1):
+        c1 = ws.cell(row=ligne_entete, column=j, value=entete)
+        c1.font = Font(bold=True, size=10)
+        c1.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c2 = ws.cell(row=ligne_entete + 1, column=j, value=sous)
+        c2.font = Font(size=8, italic=True)
+        c2.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[ligne_entete].height = 30
+    ws.row_dimensions[ligne_entete + 1].height = 24
 
     if df.empty:
-        ws["A5"] = "Aucune mesure reçue sur les dernières 24 heures."
+        ws.cell(row=ligne_entete + 3, column=1, value="Aucune mesure disponible.")
         wb.save(chemin_sortie)
         return
 
-    cumul_reseau = df["Cumul pluie 24h (mm)"].sum()
-    nb_stations_pluie = int((df["Cumul pluie 24h (mm)"] > 0).sum())
-    ws["A5"] = f"Cumul de précipitations réseau ({len(df)} stations) : {cumul_reseau:.1f} mm"
-    ws["A5"].font = Font(bold=True, color=COULEUR_ENTETE_HEX)
-    ws["A6"] = f"{nb_stations_pluie} station(s) sur {len(df)} ont enregistré de la pluie sur la période."
+    colonnes_valeurs = ["Pluie 24h (mm)", "Pluie période pluvieuse (mm)",
+                        "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)"]
 
-    df_groupe, indices_entete, indices_synthese = construire_tableau_groupe_par_province(df)
+    ligne = ligne_entete + 2
+    for province in PROVINCES_ORDRE:
+        groupe = df[df["Province"] == province]
+        if groupe.empty:
+            continue
 
-    ligne_entete_tableau = 8
-    for j, colonne in enumerate(df_groupe.columns, start=1):
-        cellule = ws.cell(row=ligne_entete_tableau, column=j, value=colonne)
-        cellule.font = Font(bold=True, color="FFFFFF")
-        cellule.fill = PatternFill(fill_type="solid", fgColor=COULEUR_ENTETE_HEX)
-        cellule.alignment = Alignment(horizontal="center")
+        for _, station_ligne in groupe.iterrows():
+            cell_nom = ws.cell(row=ligne, column=1, value=station_ligne["Station"])
+            cell_nom.alignment = Alignment(horizontal="right")
+            for j, col in enumerate(colonnes_valeurs, start=2):
+                cell = ws.cell(row=ligne, column=j, value=station_ligne[col])
+                cell.number_format = "0.0"
+                cell.alignment = Alignment(horizontal="center")
+            ligne += 1
 
-    for i, (_, ligne) in enumerate(df_groupe.iterrows()):
-        r = ligne_entete_tableau + 1 + i
-        for j, valeur in enumerate(ligne, start=1):
-            cellule = ws.cell(row=r, column=j, value=valeur)
-            cellule.alignment = Alignment(horizontal="left" if j == 1 else "center")
-            if i in indices_entete:
-                cellule.fill = PatternFill(fill_type="solid", fgColor=COULEUR_PROVINCE_HEX)
-                cellule.font = Font(bold=True)
-            elif i in indices_synthese:
-                cellule.font = Font(bold=True)
+        cell_nom = ws.cell(row=ligne, column=1, value=province)
+        cell_nom.font = Font(bold=True)
+        cell_nom.alignment = Alignment(horizontal="center")
+        cell_nom.fill = PatternFill(fill_type="solid", fgColor=COULEUR_PROVINCE_HEX)
+        for j, col in enumerate(colonnes_valeurs, start=2):
+            cell = ws.cell(row=ligne, column=j, value=round(groupe[col].mean(), 1))
+            cell.number_format = "0.0"
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="center")
+            cell.fill = PatternFill(fill_type="solid", fgColor=COULEUR_PROVINCE_HEX)
+        ligne += 2  # ligne vide de séparation entre régions
 
-    for j, colonne in enumerate(df_groupe.columns, start=1):
-        longueur = max(len(str(colonne)), df_groupe.iloc[:, j - 1].astype(str).map(len).max())
-        ws.column_dimensions[chr(64 + j)].width = max(12, longueur + 2)
+    cell_nom = ws.cell(row=ligne, column=1, value="ORMVAG")
+    cell_nom.font = Font(bold=True, size=12, color=COULEUR_ORMVAG_TEXTE)
+    cell_nom.alignment = Alignment(horizontal="center")
+    cell_nom.fill = PatternFill(fill_type="solid", fgColor=COULEUR_ORMVAG_HEX)
+    cell_nom.border = Border(bottom=bordure_moyenne)
+    for j, col in enumerate(colonnes_valeurs, start=2):
+        cell = ws.cell(row=ligne, column=j, value=round(df[col].mean(), 1))
+        cell.number_format = "0.0"
+        cell.font = Font(bold=True, size=11, color=COULEUR_ORMVAG_TEXTE)
+        cell.alignment = Alignment(horizontal="center")
+        cell.fill = PatternFill(fill_type="solid", fgColor=COULEUR_ORMVAG_HEX)
+        cell.border = Border(bottom=bordure_moyenne)
 
-    ligne_graphique = ligne_entete_tableau + len(df_groupe) + 3
-    buffer_graphiques = generer_graphiques_rapport_journalier(df)
-    if buffer_graphiques:
-        image = ImageExcel(buffer_graphiques)
-        image.anchor = f"A{ligne_graphique}"
-        ws.add_image(image)
+    ws.column_dimensions["A"].width = 28
+    for col_letter in ["B", "C", "D", "E"]:
+        ws.column_dimensions[col_letter].width = 17
+
+    ligne += 3
+    ligne, ligne_mois_mensuel, series_mensuel, nb_mois = _ecrire_tableau_mensuel(
+        ws, ligne, "PLUIE MENSUELLE (mm)", tableau_mensuel["mensuel"],
+        infos["annee_debut_campagne"], COULEUR_SECTION_HEX, bordure_moyenne)
+    ligne += 2
+    ligne, ligne_mois_cumul, series_cumul, _ = _ecrire_tableau_mensuel(
+        ws, ligne, "PLUIE CUMULATIVE (mm)", tableau_mensuel["cumulatif"],
+        infos["annee_debut_campagne"], COULEUR_SECTION_HEX, bordure_moyenne)
+
+    ligne += 2
+    if nb_mois:
+        dernier_cumul = tableau_mensuel["cumulatif"][-1]
+        _ajouter_badges_totaux(ws, ligne, 2, [
+            dernier_cumul.get("annee_n"), dernier_cumul.get("annee_n1"), dernier_cumul.get("normale"),
+        ])
+        ligne += 2
+        _ajouter_graphique_mensuel(ws, "Pluie mensuelle (mm)", ligne_mois_mensuel,
+                                    series_mensuel, nb_mois, f"A{ligne}")
 
     wb.save(chemin_sortie)
 
 
 def generer_rapport_journalier_excel(dossier_sortie="Rapports", date_fin=None):
-    """Génère le fichier Excel du rapport journalier (24h, axé pluie, avec graphiques
-    comparatifs par station) et retourne (chemin, df). `date_fin` permet de générer le
-    rapport d'un cycle 6h-6h passé (rattrapage après une absence prolongée) plutôt que
-    du cycle le plus récent."""
-    df, date_debut, date_fin = recuperer_rapport_journalier(date_fin=date_fin)
+    """Génère le relevé des précipitations (format officiel SED) et retourne
+    (chemin, df, infos). `date_fin` permet de générer le rapport d'un cycle 6h-6h
+    passé (rattrapage après une absence prolongée) plutôt que du cycle le plus récent."""
+    df, infos, tableau_mensuel = recuperer_releve_precipitations(date_fin=date_fin)
     os.makedirs(dossier_sortie, exist_ok=True)
-    nom_fichier = f"rapport_journalier_{date_fin.strftime('%Y%m%d_%H%M')}.xlsx"
+    nom_fichier = f"rapport_journalier_{infos['date_fin'].strftime('%Y%m%d_%H%M')}.xlsx"
     chemin = os.path.join(dossier_sortie, nom_fichier)
-    generer_excel_rapport_journalier(chemin, df, date_debut, date_fin)
-    return chemin, df
+    generer_excel_releve_precipitations(chemin, df, infos, tableau_mensuel)
+    return chemin, df, infos
