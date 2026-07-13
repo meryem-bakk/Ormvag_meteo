@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
@@ -449,64 +450,113 @@ def recuperer_rapport_journalier(date_fin=None):
     return df, date_debut, date_fin
 
 
-def generer_pdf_rapport_journalier(chemin_sortie, df, date_debut, date_fin):
-    doc = SimpleDocTemplate(chemin_sortie, pagesize=A4,
-                             topMargin=1.5*cm, bottomMargin=1.5*cm,
-                             leftMargin=1.5*cm, rightMargin=1.5*cm)
-    elements = []
-    styles = getSampleStyleSheet()
+def generer_graphiques_rapport_journalier(df):
+    """Deux graphiques comparant les stations entre elles pour le jour couvert :
+    cumul de pluie 24h, et températures (min/moyenne/max)."""
+    if df.empty:
+        return None
 
-    style_titre = ParagraphStyle("TitreORMVAG", parent=styles["Title"], textColor=COULEUR_TITRE)
-    style_meta = _style_meta(styles)
-    elements.append(Paragraph("ORMVAG — Rapport météorologique journalier", style_titre))
-    elements.append(Paragraph(
-        f"Période couverte : {date_debut.strftime('%d/%m/%Y %H:%M')} → {date_fin.strftime('%d/%m/%Y %H:%M')} (24 dernières heures)",
-        style_meta
-    ))
-    elements.append(Paragraph(f"Généré automatiquement le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", style_meta))
-    elements.append(Spacer(1, 0.6*cm))
+    df_tri = df.sort_values("Cumul pluie 24h (mm)", ascending=False).reset_index(drop=True)
+    x = np.arange(len(df_tri))
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 9))
+
+    ax1.bar(x, df_tri["Cumul pluie 24h (mm)"], color="#5d7a94")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(df_tri["Station"], rotation=60, ha="right", fontsize=8)
+    ax1.set_ylabel("Pluie 24h (mm)", fontsize=9)
+    ax1.set_title("Cumul de précipitations par station (24 dernières heures)", fontsize=11)
+    ax1.grid(axis="y", alpha=0.3)
+
+    largeur = 0.25
+    ax2.bar(x - largeur, df_tri["Temp. min (°C)"], width=largeur, label="Min", color="#5d7a94")
+    ax2.bar(x, df_tri["Temp. moyenne (°C)"], width=largeur, label="Moyenne", color="#2c3e50")
+    ax2.bar(x + largeur, df_tri["Temp. max (°C)"], width=largeur, label="Max", color="#e67e22")
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(df_tri["Station"], rotation=60, ha="right", fontsize=8)
+    ax2.set_ylabel("Température (°C)", fontsize=9)
+    ax2.set_title("Températures par station", fontsize=11)
+    ax2.legend(fontsize=8)
+    ax2.grid(axis="y", alpha=0.3)
+
+    fig.tight_layout()
+
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", dpi=150)
+    plt.close(fig)
+    buffer.seek(0)
+    return buffer
+
+
+def generer_excel_rapport_journalier(chemin_sortie, df, date_debut, date_fin):
+    from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as ImageExcel
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    COULEUR_ENTETE_HEX = "1A5276"
+    COULEUR_PROVINCE_HEX = "DDE6ED"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Rapport journalier"
+
+    ws["A1"] = "ORMVAG — Rapport météorologique journalier"
+    ws["A1"].font = Font(bold=True, size=14, color=COULEUR_ENTETE_HEX)
+    ws["A2"] = (f"Période couverte : {date_debut.strftime('%d/%m/%Y %H:%M')} → "
+                f"{date_fin.strftime('%d/%m/%Y %H:%M')} (24 dernières heures)")
+    ws["A3"] = f"Généré automatiquement le {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
 
     if df.empty:
-        elements.append(Paragraph("Aucune mesure reçue sur les dernières 24 heures.", style_meta))
-    else:
-        cumul_reseau = df["Cumul pluie 24h (mm)"].sum()
-        nb_stations_pluie = int((df["Cumul pluie 24h (mm)"] > 0).sum())
-        elements.append(Paragraph(
-            f"Cumul de précipitations réseau ({len(df)} stations) : <b>{cumul_reseau:.1f} mm</b>",
-            _style_sous_titre(styles)
-        ))
-        elements.append(Paragraph(
-            f"{nb_stations_pluie} station(s) sur {len(df)} ont enregistré de la pluie sur la période.",
-            style_meta
-        ))
-        elements.append(Spacer(1, 0.4*cm))
+        ws["A5"] = "Aucune mesure reçue sur les dernières 24 heures."
+        wb.save(chemin_sortie)
+        return
 
-        df_groupe, indices_entete, indices_synthese = construire_tableau_groupe_par_province(df)
+    cumul_reseau = df["Cumul pluie 24h (mm)"].sum()
+    nb_stations_pluie = int((df["Cumul pluie 24h (mm)"] > 0).sum())
+    ws["A5"] = f"Cumul de précipitations réseau ({len(df)} stations) : {cumul_reseau:.1f} mm"
+    ws["A5"].font = Font(bold=True, color=COULEUR_ENTETE_HEX)
+    ws["A6"] = f"{nb_stations_pluie} station(s) sur {len(df)} ont enregistré de la pluie sur la période."
 
-        styles_supplementaires = [("BACKGROUND", (1, 1), (1, -1), COULEUR_SURBRILLANCE)]
-        for i in indices_entete:
-            r = i + 1
-            styles_supplementaires.append(("BACKGROUND", (0, r), (-1, r), COULEUR_PROVINCE_FOND))
-            styles_supplementaires.append(("LINEABOVE", (0, r), (-1, r), 1, COULEUR_SEPARATEUR_REGION))
-        for i in indices_synthese:
-            r = i + 1
-            styles_supplementaires.append(("LINEABOVE", (0, r), (-1, r), 0.75, COULEUR_ACCENT))
+    df_groupe, indices_entete, indices_synthese = construire_tableau_groupe_par_province(df)
 
-        largeur_disponible = A4[0] - 3*cm
-        elements.extend(_element_tableau(
-            df_groupe, largeur_disponible, taille_police=8,
-            styles_supplementaires=styles_supplementaires,
-            lignes_en_gras=indices_entete + indices_synthese,
-        ))
+    ligne_entete_tableau = 8
+    for j, colonne in enumerate(df_groupe.columns, start=1):
+        cellule = ws.cell(row=ligne_entete_tableau, column=j, value=colonne)
+        cellule.font = Font(bold=True, color="FFFFFF")
+        cellule.fill = PatternFill(fill_type="solid", fgColor=COULEUR_ENTETE_HEX)
+        cellule.alignment = Alignment(horizontal="center")
 
-    doc.build(elements)
+    for i, (_, ligne) in enumerate(df_groupe.iterrows()):
+        r = ligne_entete_tableau + 1 + i
+        for j, valeur in enumerate(ligne, start=1):
+            cellule = ws.cell(row=r, column=j, value=valeur)
+            cellule.alignment = Alignment(horizontal="left" if j == 1 else "center")
+            if i in indices_entete:
+                cellule.fill = PatternFill(fill_type="solid", fgColor=COULEUR_PROVINCE_HEX)
+                cellule.font = Font(bold=True)
+            elif i in indices_synthese:
+                cellule.font = Font(bold=True)
+
+    for j, colonne in enumerate(df_groupe.columns, start=1):
+        longueur = max(len(str(colonne)), df_groupe.iloc[:, j - 1].astype(str).map(len).max())
+        ws.column_dimensions[chr(64 + j)].width = max(12, longueur + 2)
+
+    ligne_graphique = ligne_entete_tableau + len(df_groupe) + 3
+    buffer_graphiques = generer_graphiques_rapport_journalier(df)
+    if buffer_graphiques:
+        image = ImageExcel(buffer_graphiques)
+        image.anchor = f"A{ligne_graphique}"
+        ws.add_image(image)
+
+    wb.save(chemin_sortie)
 
 
-def generer_rapport_journalier_pdf(dossier_sortie="Rapports"):
-    """Génère le PDF du rapport journalier (24h, axé pluie) et retourne (chemin, df)."""
+def generer_rapport_journalier_excel(dossier_sortie="Rapports"):
+    """Génère le fichier Excel du rapport journalier (24h, axé pluie, avec graphiques
+    comparatifs par station) et retourne (chemin, df)."""
     df, date_debut, date_fin = recuperer_rapport_journalier()
     os.makedirs(dossier_sortie, exist_ok=True)
-    nom_fichier = f"rapport_journalier_{date_fin.strftime('%Y%m%d_%H%M')}.pdf"
+    nom_fichier = f"rapport_journalier_{date_fin.strftime('%Y%m%d_%H%M')}.xlsx"
     chemin = os.path.join(dossier_sortie, nom_fichier)
-    generer_pdf_rapport_journalier(chemin, df, date_debut, date_fin)
+    generer_excel_rapport_journalier(chemin, df, date_debut, date_fin)
     return chemin, df
