@@ -1,7 +1,7 @@
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.calcul_indicateurs import calculer_indicateurs
-from app.services.generateur_rapport import generer_rapport_journalier_pdf
+from app.services.generateur_rapport import generer_rapport_journalier_excel
 from app.services.email_service import envoyer_rapport_par_email
 from app.services.sauvegarde import creer_sauvegarde_auto
 from app.utils.event_bus import event_bus
@@ -28,7 +28,7 @@ def tache_quotidienne_6h():
         print(f"[Scheduler 6h] Erreur lors du calcul des indicateurs : {e}")
 
     try:
-        chemin_rapport, df_rapport = generer_rapport_journalier_pdf()
+        chemin_rapport, df_rapport = generer_rapport_journalier_excel()
         print(f"[Scheduler 6h] Rapport journalier généré : {chemin_rapport}")
 
         cumul_reseau = df_rapport["Cumul pluie 24h (mm)"].sum() if not df_rapport.empty else 0
