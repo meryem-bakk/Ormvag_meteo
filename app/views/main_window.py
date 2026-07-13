@@ -6,7 +6,6 @@ from app.views.graphiques_page import GraphiquesPage
 from app.views.donnees_page import DonneesPage
 from app.views.import_page import ImportPage
 from app.views.indicateurs_page import IndicateursPage
-from app.views.previsions_page import PrevisionsPage
 from app.views.rapports_page import RapportsPage
 from app.views.parametres_page import ParametresPage
 from app.utils.event_bus import event_bus
@@ -19,7 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 # Pages enregistrées pour le rafraîchissement auto (event_bus) une fois construites.
-NOMS_PAGES_RAFRAICHISSABLES = {"Prévisions", "Paramètres"}
+NOMS_PAGES_RAFRAICHISSABLES = {"Paramètres"}
 
 
 class MainWindow(QMainWindow):
@@ -32,10 +31,9 @@ class MainWindow(QMainWindow):
 
     def _fabrique_page(self, nom_page):
         """Retourne la fonction qui construira la page à la demande. Chargement
-        paresseux : Prévisions et Indicateurs chargent des modèles IA (TensorFlow,
-        Isolation Forest) coûteux à construire toutes en même temps dès la
-        connexion — les construire seulement au premier clic évite un blocage
-        de l'interface ("Ne répond pas") juste après le login."""
+        paresseux : Indicateurs charge un modèle IA (Isolation Forest) coûteux à
+        construire dès la connexion — le construire seulement au premier clic
+        évite un blocage de l'interface ("Ne répond pas") juste après le login."""
         if nom_page == "Tableau de bord":
             return DashboardPage
         if nom_page == "Stations":
@@ -52,8 +50,6 @@ class MainWindow(QMainWindow):
             return ImportPage
         if nom_page == "Indicateurs agroclimatiques":
             return IndicateursPage
-        if nom_page == "Prévisions":
-            return PrevisionsPage
         if nom_page == "Rapports":
             return RapportsPage
         if nom_page == "Paramètres":
@@ -90,7 +86,6 @@ class MainWindow(QMainWindow):
             "Données",
             "Graphiques",
             "Indicateurs agroclimatiques",
-            "Prévisions",
             "Carte",
             "Rapports",
             "Utilisateurs",
