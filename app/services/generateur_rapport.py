@@ -398,9 +398,15 @@ def generer_pdf_synthese(chemin_sortie, date_debut, date_fin, df_synthese, graph
 
 
 def recuperer_rapport_journalier(date_fin=None):
-    """Synthèse des dernières 24h par station, triée par cumul de pluie décroissant."""
+    """Synthèse du dernier cycle agrométéorologique complet (6h00 à 6h00, convention
+    OMM) par station, triée par cumul de pluie décroissant. La fenêtre est calée sur
+    6h00 quelle que soit l'heure réelle d'exécution — un rattrapage tardif (app ouverte
+    à 8h ou plus tard) couvre donc toujours exactement le même cycle 6h-6h qu'une
+    exécution pile à l'heure, plutôt que "les 24h avant maintenant"."""
     if date_fin is None:
-        date_fin = datetime.now()
+        maintenant = datetime.now()
+        reference_6h = maintenant.replace(hour=6, minute=0, second=0, microsecond=0)
+        date_fin = reference_6h if maintenant >= reference_6h else reference_6h - timedelta(days=1)
     date_debut = date_fin - timedelta(hours=24)
     date_debut_30j = date_fin - timedelta(days=30)
 
@@ -551,10 +557,12 @@ def generer_excel_rapport_journalier(chemin_sortie, df, date_debut, date_fin):
     wb.save(chemin_sortie)
 
 
-def generer_rapport_journalier_excel(dossier_sortie="Rapports"):
+def generer_rapport_journalier_excel(dossier_sortie="Rapports", date_fin=None):
     """Génère le fichier Excel du rapport journalier (24h, axé pluie, avec graphiques
-    comparatifs par station) et retourne (chemin, df)."""
-    df, date_debut, date_fin = recuperer_rapport_journalier()
+    comparatifs par station) et retourne (chemin, df). `date_fin` permet de générer le
+    rapport d'un cycle 6h-6h passé (rattrapage après une absence prolongée) plutôt que
+    du cycle le plus récent."""
+    df, date_debut, date_fin = recuperer_rapport_journalier(date_fin=date_fin)
     os.makedirs(dossier_sortie, exist_ok=True)
     nom_fichier = f"rapport_journalier_{date_fin.strftime('%Y%m%d_%H%M')}.xlsx"
     chemin = os.path.join(dossier_sortie, nom_fichier)

@@ -160,10 +160,10 @@ def lancer_import_complet(jours_a_recuperer=7, log=print):
         try:
             fichier = telecharger_donnees(session_web, id_site, date_debut, date_fin)
             nb = importer_fichier_en_memoire(fichier, identifiant_externe, session_db)
-            log(f"  → {nb} mesure(s) importée(s).")
+            log(f"  -> {nb} mesure(s) importée(s).")
             total_general += nb
         except Exception as e:
-            log(f"  ✗ Erreur : {e}")
+            log(f"  [ERREUR] {e}")
             erreurs.append((identifiant_externe, str(e)))
 
         time.sleep(3)

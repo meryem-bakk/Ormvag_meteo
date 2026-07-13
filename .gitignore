@@ -11,6 +11,7 @@ Rapports/
 build/
 dist/
 arbre.txt
+.dernier_run_quotidien
 *.npz
 !ML/parametres_lstm.npz
 ML/*.keras

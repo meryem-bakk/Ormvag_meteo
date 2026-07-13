@@ -78,7 +78,7 @@ def importer_fichier(chemin_fichier, log=print):
             lignes_importees_ici += 1
 
         session.commit()
-        log(f"{nom_feuille} → {lignes_importees_ici} jour(s) importé(s).")
+        log(f"{nom_feuille} -> {lignes_importees_ici} jour(s) importé(s).")
         total_lignes_importees += lignes_importees_ici
 
     session.close()
