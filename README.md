@@ -5,14 +5,17 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 ## Fonctionnalités
 
 - **Tableau de bord** : vue d'ensemble en temps réel (stations actives, mesures du jour, température moyenne, tendances) avec alertes (gel, stress thermique, déficit hydrique) et carte interactive des stations.
-- **Import de données** : import manuel ou automatique de mesures météo (fichiers Excel/CSV), traitement en arrière-plan.
+- **Import de données** : import manuel ou automatique de mesures météo (fichiers Excel/CSV), traitement en arrière-plan, plus un script d'import d'historique pluriannuel (voir [Module Machine Learning](#module-machine-learning-ml)).
 - **Gestion des stations** : création, modification, suivi de l'état des stations de mesure.
 - **Indicateurs agroclimatiques** : calcul automatique d'indicateurs journaliers (gel, stress thermique, bilan hydrique) à partir des mesures brutes.
 - **Graphiques** : visualisation des tendances par variable (température, humidité, pluie, vent) sur différentes périodes.
-- **Rapports** : génération de rapports (PDF/Excel/CSV) à partir des données collectées, avec envoi manuel par email depuis l'interface.
-- **Rapport journalier automatique** : chaque jour à 6h00, un rapport PDF axé sur les cumuls de précipitations des dernières 24h est généré et envoyé par email (voir section dédiée ci-dessous).
+- **Rapports** : génération de rapports (PDF/Excel/CSV) à partir des données collectées, groupés par province, avec envoi manuel par email depuis l'interface.
+- **Prévisions météo (IA)** : prévision à J+1 (pluie, température) par station via un modèle LSTM — page dédiée **Prévisions**.
+- **Détection d'anomalies (IA)** : en complément des règles de plausibilité physique, un modèle Isolation Forest signale les journées statistiquement atypiques (page **Indicateurs**).
 - **Carte** : localisation des stations avec statut visuel (OK / déficit / alerte).
-- **Gestion des utilisateurs et rôles** : authentification et contrôle d'accès.
+- **Gestion des utilisateurs et rôles** : authentification, contrôle d'accès, et historique des modifications (création/modification de compte, changement de rôle, réinitialisation de mot de passe).
+- **Sauvegarde** : sauvegarde manuelle depuis l'interface, et sauvegarde automatique planifiée chaque jour à 6h00.
+- **Tâche planifiée quotidienne (6h00)** : import des dernières mesures, recalcul des indicateurs, génération et envoi par email du rapport journalier, sauvegarde de la base (voir sections dédiées ci-dessous).
 
 ## Stack technique
 
@@ -21,18 +24,23 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 - **Graphiques** : Matplotlib
 - **Cartographie** : Leaflet.js (affiché via `QWebEngineView`)
 - **Authentification** : bcrypt pour le hachage des mots de passe
+- **Planification** : APScheduler (tâche quotidienne à 6h00)
+- **Machine Learning** : TensorFlow/Keras (prévisions LSTM), scikit-learn (détection d'anomalies Isolation Forest)
 
 ## Structure du projet
 
 ```
 app/
-├── models/          # Modèles SQLAlchemy (Station, Mesure, IndicateurJournalier, Role, User)
-├── services/         # Logique métier (alertes, calcul d'indicateurs, rapports, planification)
+├── models/          # Modèles SQLAlchemy (Station, Mesure, IndicateurJournalier, Role, User, HistoriqueModification)
+├── services/         # Logique métier (alertes, calcul d'indicateurs, rapports, email, sauvegarde, historique,
+│                      #   planification, prévision_ml, detection_anomalies_ml)
 ├── utils/            # Utilitaires
-├── views/             # Pages de l'interface (tableau de bord, import, stations, graphiques, etc.)
+├── views/             # Pages de l'interface (tableau de bord, import, stations, graphiques, prévisions, etc.)
 ├── workers/          # Traitements en arrière-plan (import de données)
 └── database.py        # Configuration de la connexion à la base de données
+ML/                    # Pipeline Machine Learning (voir section dédiée ci-dessous)
 seed_*.py              # Scripts d'initialisation de la base (rôles, admin, stations, mesures)
+importer_historique_excel.py  # Import d'historique météo pluriannuel depuis des exports Excel
 main.py                # Point d'entrée de l'application
 ```
 
@@ -96,25 +104,60 @@ Voir `.env.example` pour la liste complète. Principales variables :
 | `SMTP_HOST`, `SMTP_PORT` | Serveur et port SMTP utilisés pour l'envoi des rapports par email (ex. `smtp.gmail.com`, `587`). |
 | `SMTP_USER`, `SMTP_PASSWORD` | Compte d'envoi et mot de passe. Pour Gmail, utiliser un [mot de passe d'application](https://myaccount.google.com/apppasswords) (2FA requise), jamais le mot de passe du compte. |
 | `SMTP_DESTINATAIRES` | Adresse(s) recevant les rapports, séparées par des virgules. Modifiable aussi depuis l'interface (page Paramètres). |
+| `PG_DUMP_PATH` | (optionnel) Chemin vers `pg_dump.exe`, utilisé pour la sauvegarde de la base. Si absent, recherché automatiquement dans `C:\Program Files\PostgreSQL\<version>\bin\` (Windows). |
 
-## Rapport journalier automatique
+## Tâche planifiée quotidienne (6h00)
 
-Une tâche planifiée (`APScheduler`) s'exécute chaque jour à **6h00** :
+Une tâche planifiée (`APScheduler`, `app/services/scheduler.py`) s'exécute chaque jour à **6h00** et enchaîne, chacune indépendamment des autres (une erreur sur l'une n'empêche pas les suivantes) :
 
-1. Import automatique des dernières mesures des stations.
-2. Recalcul des indicateurs agroclimatiques journaliers.
-3. Génération d'un rapport PDF sur les **24 dernières heures**, trié par cumul de précipitations décroissant par station, avec le cumul réseau mis en avant.
-4. Envoi de ce PDF par email aux adresses définies dans `SMTP_DESTINATAIRES`.
+1. **Import automatique** des dernières mesures des stations.
+2. **Recalcul des indicateurs** agroclimatiques journaliers (uniquement les ~45 derniers jours ; les indicateurs plus anciens sont stables et ne sont pas retraités).
+3. **Rapport journalier** : génération d'un PDF sur les **24 dernières heures**, groupé par province, trié par cumul de précipitations décroissant, envoyé par email aux adresses définies dans `SMTP_DESTINATAIRES`. Le fichier est aussi conservé dans `Rapports/`. Un envoi manuel (période, stations et format PDF/Excel/CSV au choix) est disponible depuis la page **Rapports**.
+4. **Sauvegarde automatique** de la base (voir section dédiée ci-dessous).
 
-Le rapport est aussi sauvegardé dans le dossier `Rapports/`. Un envoi manuel (avec choix de la période, des stations et du format PDF/Excel/CSV) est disponible depuis la page **Rapports** de l'application.
+Sans configuration SMTP valide dans `.env`, les autres étapes continuent de fonctionner normalement — seul l'envoi de l'email échoue (erreur journalisée dans la console). Idem pour `pg_dump` absent : seule la sauvegarde échoue.
 
-Sans configuration SMTP valide dans `.env`, l'import et le calcul des indicateurs continuent de fonctionner normalement — seul l'envoi de l'email échoue silencieusement (erreur journalisée dans la console).
+## Sauvegarde
+
+- **Automatique** : un dump complet de la base (`pg_dump`) est généré chaque jour à 6h00 dans `Sauvegardes/`, au format `sauvegarde_ormvag_AAAAMMJJ_HHMM.sql`. Seules les **14 sauvegardes les plus récentes** sont conservées, les plus anciennes sont supprimées automatiquement (`app/services/sauvegarde.py`).
+- **Manuelle** : un bouton "Créer une sauvegarde" dans la page **Paramètres** permet de générer un dump à l'emplacement de son choix, à tout moment.
+
+## Module Machine Learning (`ML/`)
+
+Deux modèles entraînés sur l'historique météo des 14 stations (jusqu'à 10 ans de données journalières selon la station) :
+
+| Modèle | Fichier | Rôle |
+|---|---|---|
+| LSTM multi-stations | `ML/modele_lstm.keras` + `ML/parametres_lstm.npz` | Prévoit la pluie et la température du lendemain à partir des 30 derniers jours de mesures. MAE sur jeu de test : ~1,9 mm (pluie), ~1,2°C (température). |
+| Isolation Forest | `ML/detecteur_anomalies.joblib` | Détecte les journées dont la combinaison de variables (température, humidité, pluie, vent...) est statistiquement atypique pour la station. |
+
+Ces deux fichiers sont **versionnés** (petits, quelques Mo) car réellement utilisés par l'application (pages **Prévisions** et **Indicateurs**). Si absents (ex. après un import frais sans historique), les fonctionnalités correspondantes se désactivent proprement (message informatif, pas d'erreur bloquante).
+
+### Pipeline de données (scripts, à relancer manuellement si besoin)
+
+1. `importer_historique_excel.py <dossier>` — importe un historique météo pluriannuel depuis des exports Excel (une feuille par station, reconnue par nom ou par identifiant externe). Idempotent : ignore les dates déjà confirmées ("Mesuré") et les lignes de panne capteur (valeurs à 0 partout).
+2. `ML/diagnostic_qualite.py` — audite la qualité des données par station (trous, doublons, valeurs suspectes).
+3. `ML/nettoyer_donnees.py [--appliquer]` — supprime les mesures de panne capteur (dry-run par défaut).
+4. `ML/preparer_donnees_lstm.py` — construit les fenêtres d'entraînement du LSTM (segmentation aux trous > 7 jours, interpolation des petits trous, split train/val/test chronologique). Génère `donnees_lstm.npz` (~85 Mo, non versionné) et le petit fichier `parametres_lstm.npz` (versionné).
+5. `ML/entrainer_lstm.py` — entraîne et sauvegarde le modèle de prévision.
+6. `ML/entrainer_detecteur_anomalies.py` — entraîne et sauvegarde le détecteur d'anomalies.
+
+Pour re-générer les modèles avec des données à jour, relancer les étapes 4 à 6 (les étapes 1 à 3 ne sont utiles que si de nouvelles données brutes doivent être importées/nettoyées).
+
+**Limites connues**, à garder en tête pour toute interprétation des résultats :
+- Le modèle de pluie détecte bien *qu'il va pleuvoir* (rappel ~78-85 %) mais sous-estime souvent la *quantité* lors des épisodes pluvieux, et génère un nombre notable de fausses alertes (précision ~33-35 %) — se fier à la tendance plutôt qu'au chiffre exact.
+- Une architecture "hurdle" à deux modèles (occurrence + quantité) a été testée mais n'a pas surpassé le modèle de référence sur l'ensemble des métriques ; le modèle simple a été conservé.
+
+## Historique des modifications
+
+Toute création/modification de compte utilisateur, changement de rôle, activation/désactivation, réinitialisation ou changement de mot de passe est enregistrée (qui, quoi, quand) dans la table `historique_modifications` et consultable directement sur la page **Utilisateurs**.
 
 ## Sécurité
 
 - Ne jamais committer le fichier `.env` (déjà exclu via `.gitignore`) — `.env.example` ne doit contenir que des valeurs d'exemple, jamais de vrais identifiants ou mots de passe.
 - Changer le mot de passe administrateur par défaut après la première connexion.
 - Les fichiers de données réelles (`.sql`, `.xlsx`, `.csv`) ne sont pas versionnés — voir `.gitignore`.
+- Historique des modifications sur les comptes/rôles (voir section dédiée ci-dessus).
 
 ## Licence
 
