@@ -76,18 +76,19 @@ def _envoyer_rapport_pour_jour(jour):
     """Génère et envoie le rapport journalier du cycle 6h-6h se terminant le
     matin du `jour` donné (ex. jour=13/07 -> cycle 12/07 06h -> 13/07 06h)."""
     date_fin_cycle = datetime.combine(jour, time(6, 0))
-    chemin_rapport, df_rapport = generer_rapport_journalier_excel(date_fin=date_fin_cycle)
+    chemin_rapport, df_rapport, infos_rapport = generer_rapport_journalier_excel(date_fin=date_fin_cycle)
     print(f"[Scheduler 6h] Rapport journalier généré ({jour.strftime('%d/%m/%Y')}) : {chemin_rapport}")
 
-    cumul_reseau = df_rapport["Cumul pluie 24h (mm)"].sum() if not df_rapport.empty else 0
+    pluie_moyenne_reseau = df_rapport["Pluie 24h (mm)"].mean() if not df_rapport.empty else 0
     envoyer_rapport_par_email(
         chemin_rapport,
-        sujet=f"ORMVAG — Rapport météo journalier du {jour.strftime('%d/%m/%Y')}",
+        sujet=f"ORMVAG — Relevé des précipitations du {jour.strftime('%d/%m/%Y')} "
+              f"(campagne {infos_rapport['libelle_campagne']})",
         corps=(
             "Bonjour,\n\n"
-            "Veuillez trouver ci-joint le rapport météorologique des dernières 24 heures "
-            "(cumuls de précipitations par station).\n"
-            f"Cumul de précipitations réseau : {cumul_reseau:.1f} mm.\n\n"
+            "Veuillez trouver ci-joint le relevé des précipitations du réseau ORMVAG "
+            "(pluie 24h, période pluvieuse, cumuls de campagne par station et par province).\n"
+            f"Pluie moyenne réseau (dernières 24h) : {pluie_moyenne_reseau:.1f} mm.\n\n"
             "Cordialement,\nORMVAG — Système météo automatisé"
         ),
     )

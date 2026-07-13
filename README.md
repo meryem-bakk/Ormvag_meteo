@@ -112,10 +112,20 @@ Une tâche planifiée (`APScheduler`, `app/services/scheduler.py`) s'exécute ch
 
 1. **Import automatique** des dernières mesures des stations.
 2. **Recalcul des indicateurs** agroclimatiques journaliers (uniquement les ~45 derniers jours ; les indicateurs plus anciens sont stables et ne sont pas retraités).
-3. **Rapport journalier** : génération d'un PDF sur les **24 dernières heures**, groupé par province, trié par cumul de précipitations décroissant, envoyé par email aux adresses définies dans `SMTP_DESTINATAIRES`. Le fichier est aussi conservé dans `Rapports/`. Un envoi manuel (période, stations et format PDF/Excel/CSV au choix) est disponible depuis la page **Rapports**.
+3. **Relevé des précipitations** : génération d'un fichier Excel au format officiel SED "RELEVE DES PRECIPITATIONS POUR LA CAMPAGNE AGRICOLE", envoyé par email aux adresses définies dans `SMTP_DESTINATAIRES`. Le fichier est aussi conservé dans `Rapports/`. Un envoi manuel (période, stations et format PDF/Excel/CSV au choix) est disponible depuis la page **Rapports**.
 4. **Sauvegarde automatique** de la base (voir section dédiée ci-dessous).
 
+Si l'application reste fermée à 6h00 (absence prolongée), la tâche est rattrapée au prochain démarrage : la fenêtre d'import s'élargit à la taille réelle de l'absence (plafonnée à 14 jours) et **un relevé distinct est généré et envoyé pour chaque jour manqué**, plutôt qu'un seul rapport pour le jour le plus récent.
+
 Sans configuration SMTP valide dans `.env`, les autres étapes continuent de fonctionner normalement — seul l'envoi de l'email échoue (erreur journalisée dans la console). Idem pour `pg_dump` absent : seule la sauvegarde échoue.
+
+### Format du relevé des précipitations
+
+Reproduit la mise en page et les variables du bulletin utilisé par le SED (Service des Études et Données) :
+
+- **Par station**, groupées par province (Kénitra, Sidi Kacem, Sidi Slimane) avec une ligne de moyenne par province et une ligne totale "ORMVAG" : pluie des **24 dernières heures** (cycle 6h-6h, convention OMM), pluie de la **période pluvieuse en cours** (détectée automatiquement — épisode ininterrompu par plus de 3 jours secs consécutifs), pluie cumulée de la **campagne agricole en cours** (depuis le 1er septembre) et de la **campagne n-1** à la même date.
+- **Deux tableaux mensuels** (pluie mensuelle et pluie cumulative, de septembre au mois en cours) comparant l'année en cours, l'année n-1 et la **normale sur 30 ans**. La base ne remonte qu'à ~10 ans : les valeurs de normale sont reprises telles quelles du bulletin officiel SED (`NORMALE_30_ANS_MENSUELLE` dans `app/services/generateur_rapport.py`) plutôt que recalculées, et à mettre à jour manuellement si le SED communique une normale révisée.
+- Un graphique Excel natif (barres groupées, branché directement sur les cellules du tableau "PLUIE MENSUELLE") compare visuellement l'année en cours, l'année n-1 et la normale 30 ans, avec des badges rappelant les cumuls totaux de campagne.
 
 ## Sauvegarde
 
