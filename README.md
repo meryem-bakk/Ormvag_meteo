@@ -10,7 +10,6 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 - **Indicateurs agroclimatiques** : calcul automatique d'indicateurs journaliers (gel, stress thermique, bilan hydrique) à partir des mesures brutes.
 - **Graphiques** : visualisation des tendances par variable (température, humidité, pluie, vent) sur différentes périodes.
 - **Rapports** : génération de rapports (PDF/Excel/CSV) à partir des données collectées, groupés par province, avec envoi manuel par email depuis l'interface.
-- **Prévisions météo (IA)** : prévision à J+1 (pluie, température) par station via un modèle LSTM — page dédiée **Prévisions**.
 - **Détection d'anomalies (IA)** : en complément des règles de plausibilité physique, un modèle Isolation Forest signale les journées statistiquement atypiques (page **Indicateurs**).
 - **Carte** : localisation des stations avec statut visuel (OK / déficit / alerte).
 - **Gestion des utilisateurs et rôles** : authentification, contrôle d'accès, et historique des modifications (création/modification de compte, changement de rôle, réinitialisation de mot de passe).
@@ -25,7 +24,7 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 - **Cartographie** : Leaflet.js (affiché via `QWebEngineView`)
 - **Authentification** : bcrypt pour le hachage des mots de passe
 - **Planification** : APScheduler (tâche quotidienne à 6h00)
-- **Machine Learning** : TensorFlow/Keras (prévisions LSTM), scikit-learn (détection d'anomalies Isolation Forest)
+- **Machine Learning** : scikit-learn (détection d'anomalies Isolation Forest, intégrée à l'app) ; TensorFlow/Keras (prévisions LSTM, étude ponctuelle — voir [Module Machine Learning](#module-machine-learning-ml))
 
 ## Structure du projet
 
@@ -35,7 +34,7 @@ app/
 ├── services/         # Logique métier (alertes, calcul d'indicateurs, rapports, email, sauvegarde, historique,
 │                      #   planification, prévision_ml, detection_anomalies_ml)
 ├── utils/            # Utilitaires
-├── views/             # Pages de l'interface (tableau de bord, import, stations, graphiques, prévisions, etc.)
+├── views/             # Pages de l'interface (tableau de bord, import, stations, graphiques, etc.)
 ├── workers/          # Traitements en arrière-plan (import de données)
 └── database.py        # Configuration de la connexion à la base de données
 ML/                    # Pipeline Machine Learning (voir section dédiée ci-dessous)
@@ -141,7 +140,9 @@ Deux modèles entraînés sur l'historique météo des 14 stations (jusqu'à 10 
 | LSTM multi-stations | `ML/modele_lstm.keras` + `ML/parametres_lstm.npz` | Prévoit la pluie et la température du lendemain à partir des 30 derniers jours de mesures. MAE sur jeu de test : ~1,9 mm (pluie), ~1,2°C (température). |
 | Isolation Forest | `ML/detecteur_anomalies.joblib` | Détecte les journées dont la combinaison de variables (température, humidité, pluie, vent...) est statistiquement atypique pour la station. |
 
-Ces deux fichiers sont **versionnés** (petits, quelques Mo) car réellement utilisés par l'application (pages **Prévisions** et **Indicateurs**). Si absents (ex. après un import frais sans historique), les fonctionnalités correspondantes se désactivent proprement (message informatif, pas d'erreur bloquante).
+Seul l'**Isolation Forest** est intégré à l'application (page **Indicateurs**) : léger à charger, et il évalue les mesures du jour même, donc reste pertinent sans réentraînement fréquent.
+
+Le **LSTM** a été implémenté et branché à l'application (page dédiée **Prévisions**, `app/views/previsions_page.py` + `app/services/prevision_ml.py`) au cours du stage, puis retiré de l'interface : une prévision affichée en direct sans pipeline de réentraînement régulier donne une fausse impression de fraîcheur, et son chargement (TensorFlow) alourdissait nettement le démarrage de l'app (~15s). Le code reste dans le dépôt et le modèle entraîné (`ML/modele_lstm.keras`) est versionné ; l'étude (méthodologie, résultats, limites ci-dessous) est documentée dans le rapport de stage plutôt qu'en fonctionnalité live.
 
 ### Pipeline de données (scripts, à relancer manuellement si besoin)
 
