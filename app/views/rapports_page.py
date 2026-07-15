@@ -1,10 +1,9 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QDateEdit, QComboBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox,
-    QGraphicsDropShadowEffect, QRadioButton, QButtonGroup
+    QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QColor
 import os
 from datetime import datetime
 from app.database import SessionLocal
@@ -15,6 +14,7 @@ from app.services.generateur_rapport import (
     generer_excel_synthese, generer_csv_synthese,
 )
 from app.services.email_service import envoyer_rapport_par_email
+from app.utils.theme import COULEURS, titre_section, diviseur_vertical
 import io
 import matplotlib
 matplotlib.use("Agg")
@@ -25,7 +25,7 @@ from app.models.indicateur_journalier import IndicateurJournalier
 class RapportsPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("background-color: #f4f6f8;")
+        self.setStyleSheet(f"background-color: {COULEURS['fond']};")
         self.cases_stations = {}
         self._build_ui()
         self._charger_stations()
@@ -36,59 +36,63 @@ class RapportsPage(QWidget):
         layout.setSpacing(18)
 
         titre = QLabel("Rapports")
-        titre.setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50;")
+        titre.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {COULEURS['texte']};")
         layout.addWidget(titre)
 
         corps = QHBoxLayout()
-        corps.setSpacing(16)
+        corps.setSpacing(24)
 
         # --- Colonne gauche : stations ---
-        panneau_stations = QFrame()
-        panneau_stations.setFixedWidth(220)
-        panneau_stations.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        panneau_stations.setGraphicsEffect(self._ombre_legere())
+        panneau_stations = QWidget()
+        panneau_stations.setFixedWidth(310)
+        panneau_stations.setStyleSheet("background: transparent;")
         layout_panneau = QVBoxLayout(panneau_stations)
-        layout_panneau.setContentsMargins(16, 16, 16, 16)
+        layout_panneau.setContentsMargins(0, 0, 0, 0)
+        layout_panneau.setSpacing(10)
 
-        label_stations = QLabel("Stations")
-        label_stations.setStyleSheet("font-weight: bold; color: #2c3e50;")
-        layout_panneau.addWidget(label_stations)
+        bloc_titre_stations, _ = titre_section("Stations")
+        layout_panneau.addLayout(bloc_titre_stations)
 
         self.case_toutes = QCheckBox("Toutes les stations")
         self.case_toutes.setChecked(True)
-        self.case_toutes.setStyleSheet("color: #2c3e50; font-weight: bold; margin-bottom: 6px;")
+        self.case_toutes.setStyleSheet(f"color: {COULEURS['texte']}; font-weight: bold; margin-bottom: 6px;")
         self.case_toutes.stateChanged.connect(self._basculer_toutes_stations)
         layout_panneau.addWidget(self.case_toutes)
 
         zone_defilement = QScrollArea()
         zone_defilement.setWidgetResizable(True)
-        zone_defilement.setStyleSheet("QScrollArea { border: none; }")
+        zone_defilement.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         conteneur = QWidget()
+        conteneur.setStyleSheet("background: transparent;")
         self.layout_cases = QVBoxLayout(conteneur)
         zone_defilement.setWidget(conteneur)
         layout_panneau.addWidget(zone_defilement)
 
         corps.addWidget(panneau_stations)
+        corps.addWidget(diviseur_vertical())
 
         # --- Colonne droite : paramètres du rapport ---
-        panneau_droit = QFrame()
-        panneau_droit.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        panneau_droit.setGraphicsEffect(self._ombre_legere())
+        panneau_droit = QWidget()
+        panneau_droit.setStyleSheet("background: transparent;")
         layout_droit = QVBoxLayout(panneau_droit)
-        layout_droit.setContentsMargins(20, 20, 20, 20)
+        layout_droit.setContentsMargins(0, 0, 0, 0)
         layout_droit.setSpacing(14)
 
         label_periode = QLabel("Période")
-        label_periode.setStyleSheet("font-weight: bold; color: #2c3e50;")
+        label_periode.setStyleSheet(f"font-weight: bold; color: {COULEURS['texte']};")
         layout_droit.addWidget(label_periode)
 
         ligne_dates = QHBoxLayout()
-        style_champ = "QDateEdit { color: #2c3e50; background-color: white; border: 1px solid #ccc; border-radius: 6px; padding: 6px; }"
+        style_champ = (
+            f"QDateEdit {{ color: {COULEURS['texte']}; background-color: white; "
+            f"border: 1px solid #ccc; border-radius: 6px; padding: 6px; }}"
+        )
 
         ligne_dates.addWidget(QLabel("Du :"))
         self.date_debut = QDateEdit(calendarPopup=True)
         self.date_debut.setDisplayFormat("dd/MM/yyyy")
         self.date_debut.setDate(QDate.currentDate().addMonths(-1))
+        self.date_debut.setMinimumWidth(110)
         self.date_debut.setStyleSheet(style_champ)
         ligne_dates.addWidget(self.date_debut)
 
@@ -96,6 +100,7 @@ class RapportsPage(QWidget):
         self.date_fin = QDateEdit(calendarPopup=True)
         self.date_fin.setDisplayFormat("dd/MM/yyyy")
         self.date_fin.setDate(QDate.currentDate())
+        self.date_fin.setMinimumWidth(110)
         self.date_fin.setStyleSheet(style_champ)
         ligne_dates.addWidget(self.date_fin)
 
@@ -128,7 +133,7 @@ class RapportsPage(QWidget):
         self.radio_synthese.setChecked(True)
 
         for radio in [self.radio_synthese, self.radio_detaille]:
-            radio.setStyleSheet("color: #2c3e50;")
+            radio.setStyleSheet(self._style_radio())
             self.groupe_type.addButton(radio)
             ligne_type.addWidget(radio)
         ligne_type.addStretch()
@@ -147,7 +152,7 @@ class RapportsPage(QWidget):
         self.radio_pdf.setChecked(True)
 
         for radio in [self.radio_pdf, self.radio_excel, self.radio_csv]:
-            radio.setStyleSheet("color: #2c3e50;")
+            radio.setStyleSheet(self._style_radio())
             self.groupe_format.addButton(radio)
             ligne_format.addWidget(radio)
         ligne_format.addStretch()
@@ -162,7 +167,7 @@ class RapportsPage(QWidget):
         ligne_boutons = QHBoxLayout()
         ligne_boutons.setSpacing(10)
 
-        bouton_generer = QPushButton("📄  Générer le rapport")
+        bouton_generer = QPushButton("Générer le rapport")
         bouton_generer.setCursor(Qt.PointingHandCursor)
         bouton_generer.setMinimumHeight(42)
         bouton_generer.setStyleSheet("""
@@ -172,7 +177,7 @@ class RapportsPage(QWidget):
         bouton_generer.clicked.connect(self._generer)
         ligne_boutons.addWidget(bouton_generer, stretch=1)
 
-        bouton_email = QPushButton("📧  Envoyer par email")
+        bouton_email = QPushButton("Envoyer par email")
         bouton_email.setCursor(Qt.PointingHandCursor)
         bouton_email.setMinimumHeight(42)
         bouton_email.setStyleSheet("""
@@ -187,13 +192,20 @@ class RapportsPage(QWidget):
         corps.addWidget(panneau_droit, stretch=1)
         layout.addLayout(corps)
 
-    def _ombre_legere(self):
-        ombre = QGraphicsDropShadowEffect()
-        ombre.setBlurRadius(16)
-        ombre.setXOffset(0)
-        ombre.setYOffset(2)
-        ombre.setColor(QColor(0, 0, 0, 25))
-        return ombre
+    def _style_radio(self):
+        """Distingue clairement l'option cochée (rond bleu plein) des autres
+        (rond gris vide) — sans ça, Qt rend par défaut tous les ronds identiques."""
+        return f"""
+            QRadioButton {{ color: {COULEURS['texte']}; spacing: 6px; }}
+            QRadioButton::indicator {{
+                width: 15px; height: 15px; border-radius: 8px;
+                border: 2px solid #c7ced4; background: white;
+            }}
+            QRadioButton::indicator:hover {{ border: 2px solid {COULEURS['primaire']}; }}
+            QRadioButton::indicator:checked {{
+                border: 2px solid {COULEURS['primaire']}; background: {COULEURS['primaire']};
+            }}
+        """
 
     def _charger_stations(self):
         session = SessionLocal()

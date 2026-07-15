@@ -1,12 +1,13 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QDoubleSpinBox,
-    QFrame, QHeaderView, QMessageBox, QGraphicsDropShadowEffect
+    QHeaderView, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from app.database import SessionLocal
 from app.models.station import Station
+from app.utils.theme import COULEURS, titre_section
 
 
 class StationsPage(QWidget):
@@ -16,7 +17,7 @@ class StationsPage(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("background-color: #f4f6f8;")
+        self.setStyleSheet(f"background-color: {COULEURS['fond']};")
         self.station_en_edition_id = None
         self.stations_cache = []
         self._build_ui()
@@ -30,25 +31,25 @@ class StationsPage(QWidget):
         # --- En-tête : titre + compteur + recherche ---
         entete = QHBoxLayout()
 
-        bloc_titre = QVBoxLayout()
+        bloc_titre_page = QVBoxLayout()
         titre = QLabel("Gestion des stations")
-        titre.setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50;")
-        bloc_titre.addWidget(titre)
+        titre.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {COULEURS['texte']};")
+        bloc_titre_page.addWidget(titre)
 
         self.label_compteur = QLabel("")
-        self.label_compteur.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-        bloc_titre.addWidget(self.label_compteur)
+        self.label_compteur.setStyleSheet(f"color: {COULEURS['neutre']}; font-size: 12px;")
+        bloc_titre_page.addWidget(self.label_compteur)
 
-        entete.addLayout(bloc_titre)
+        entete.addLayout(bloc_titre_page)
         entete.addStretch()
 
         self.champ_recherche = QLineEdit()
-        self.champ_recherche.setPlaceholderText("🔍  Rechercher par nom ou code…")
+        self.champ_recherche.setPlaceholderText("Rechercher par nom ou code…")
         self.champ_recherche.setFixedWidth(260)
         self.champ_recherche.setStyleSheet("""
             QLineEdit {
                 color: #2c3e50; background-color: white;
-                border: 1px solid #ccc; border-radius: 18px;
+                border: 1px solid #ccc; border-radius: 6px;
                 padding: 8px 14px;
             }
             QLineEdit:focus { border: 1px solid #1a5276; }
@@ -59,16 +60,8 @@ class StationsPage(QWidget):
         layout.addLayout(entete)
 
         # --- Formulaire ---
-        formulaire = QFrame()
-        formulaire.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        formulaire.setGraphicsEffect(self._ombre_legere())
-        layout_form_ext = QVBoxLayout(formulaire)
-        layout_form_ext.setContentsMargins(20, 16, 20, 16)
-        layout_form_ext.setSpacing(10)
-
-        self.label_mode_form = QLabel("Ajouter une station")
-        self.label_mode_form.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
-        layout_form_ext.addWidget(self.label_mode_form)
+        bloc_titre_form, self.label_mode_form = titre_section("Ajouter une station")
+        layout.addLayout(bloc_titre_form)
 
         grille_form = QGridLayout()
         grille_form.setHorizontalSpacing(14)
@@ -138,21 +131,21 @@ class StationsPage(QWidget):
         grille_form.setColumnStretch(3, 1)
         grille_form.setColumnStretch(4, 1)
 
-        layout_form_ext.addLayout(grille_form)
-        layout.addWidget(formulaire)
+        layout.addLayout(grille_form)
+        layout.addSpacing(4)
 
         # --- Actions sur sélection ---
         layout_actions = QHBoxLayout()
-        layout_actions.addWidget(self._label("color: #7f8c8d; font-size: 12px;", "Sélectionne une ligne dans le tableau pour la modifier ou la supprimer :"))
+        layout_actions.addWidget(self._label(f"color: {COULEURS['neutre']}; font-size: 12px;", "Sélectionne une ligne dans le tableau pour la modifier ou la supprimer :"))
         layout_actions.addStretch()
 
-        self.bouton_modifier = QPushButton("✎  Modifier")
+        self.bouton_modifier = QPushButton("Modifier")
         self.bouton_modifier.setCursor(Qt.PointingHandCursor)
         self.bouton_modifier.setStyleSheet(self._style_bouton("#e67e22", "#d35400"))
         self.bouton_modifier.clicked.connect(self._charger_dans_formulaire)
         layout_actions.addWidget(self.bouton_modifier)
 
-        self.bouton_supprimer = QPushButton("🗑  Supprimer")
+        self.bouton_supprimer = QPushButton("Supprimer")
         self.bouton_supprimer.setCursor(Qt.PointingHandCursor)
         self.bouton_supprimer.setStyleSheet(self._style_bouton("#c0392b", "#a93226"))
         self.bouton_supprimer.clicked.connect(self._supprimer_station)
@@ -184,7 +177,6 @@ class StationsPage(QWidget):
                 padding: 8px; border: none; font-weight: bold;
             }
         """)
-        formulaire.setGraphicsEffect(self._ombre_legere())
         layout.addWidget(self.tableau)
 
     def rafraichir_donnees(self):
@@ -194,14 +186,6 @@ class StationsPage(QWidget):
         label = QLabel(texte)
         label.setStyleSheet(style)
         return label
-
-    def _ombre_legere(self):
-        ombre = QGraphicsDropShadowEffect()
-        ombre.setBlurRadius(16)
-        ombre.setXOffset(0)
-        ombre.setYOffset(2)
-        ombre.setColor(QColor(0, 0, 0, 25))
-        return ombre
 
     def _style_bouton(self, couleur, couleur_hover):
         return f"""

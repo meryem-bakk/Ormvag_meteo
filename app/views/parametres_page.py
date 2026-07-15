@@ -3,46 +3,38 @@ import re
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QFrame, QMessageBox, QFileDialog, QGraphicsDropShadowEffect
+    QMessageBox, QFileDialog
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 import bcrypt
 from dotenv import find_dotenv, set_key
 from app.database import SessionLocal
 from app.models.user import User
 from app.services.historique import enregistrer as enregistrer_historique
 from app.services.sauvegarde import trouver_pg_dump, executer_pg_dump
+from app.utils.theme import COULEURS, titre_section
 
 
 class ParametresPage(QWidget):
     def __init__(self, utilisateur_connecte):
         super().__init__()
         self.utilisateur_connecte = utilisateur_connecte
-        self.setStyleSheet("background-color: #f4f6f8;")
+        self.setStyleSheet(f"background-color: {COULEURS['fond']};")
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(18)
+        layout.setSpacing(24)
 
         titre = QLabel("Paramètres")
-        titre.setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50;")
+        titre.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {COULEURS['texte']};")
         layout.addWidget(titre)
 
-        layout.addWidget(self._bloc_mon_compte())
-        layout.addWidget(self._bloc_notifications())
-        layout.addWidget(self._bloc_sauvegarde())
+        layout.addLayout(self._bloc_mon_compte())
+        layout.addLayout(self._bloc_notifications())
+        layout.addLayout(self._bloc_sauvegarde())
         layout.addStretch()
-
-    def _ombre_legere(self):
-        ombre = QGraphicsDropShadowEffect()
-        ombre.setBlurRadius(16)
-        ombre.setXOffset(0)
-        ombre.setYOffset(2)
-        ombre.setColor(QColor(0, 0, 0, 25))
-        return ombre
 
     def _style_champ(self):
         return """
@@ -58,44 +50,40 @@ class ParametresPage(QWidget):
 
     # --- Bloc 1 : Mon compte ---
     def _bloc_mon_compte(self):
-        bloc = QFrame()
-        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        bloc.setGraphicsEffect(self._ombre_legere())
-        layout = QVBoxLayout(bloc)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
+        bloc, _ = titre_section(f"Mon compte — {self.utilisateur_connecte.username}")
+        largeur_champ = 360
 
-        titre = QLabel(f"Mon compte — {self.utilisateur_connecte.username}")
-        titre.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
-        layout.addWidget(titre)
-
-        layout.addWidget(QLabel("Mot de passe actuel"))
+        bloc.addWidget(QLabel("Mot de passe actuel"))
         self.champ_mdp_actuel = QLineEdit()
         self.champ_mdp_actuel.setEchoMode(QLineEdit.Password)
+        self.champ_mdp_actuel.setMaximumWidth(largeur_champ)
         self.champ_mdp_actuel.setStyleSheet(self._style_champ())
-        layout.addWidget(self.champ_mdp_actuel)
+        bloc.addWidget(self.champ_mdp_actuel)
 
-        layout.addWidget(QLabel("Nouveau mot de passe"))
+        bloc.addWidget(QLabel("Nouveau mot de passe"))
         self.champ_mdp_nouveau = QLineEdit()
         self.champ_mdp_nouveau.setEchoMode(QLineEdit.Password)
+        self.champ_mdp_nouveau.setMaximumWidth(largeur_champ)
         self.champ_mdp_nouveau.setStyleSheet(self._style_champ())
-        layout.addWidget(self.champ_mdp_nouveau)
+        bloc.addWidget(self.champ_mdp_nouveau)
 
-        layout.addWidget(QLabel("Confirmer le nouveau mot de passe"))
+        bloc.addWidget(QLabel("Confirmer le nouveau mot de passe"))
         self.champ_mdp_confirmation = QLineEdit()
         self.champ_mdp_confirmation.setEchoMode(QLineEdit.Password)
+        self.champ_mdp_confirmation.setMaximumWidth(largeur_champ)
         self.champ_mdp_confirmation.setStyleSheet(self._style_champ())
-        layout.addWidget(self.champ_mdp_confirmation)
+        bloc.addWidget(self.champ_mdp_confirmation)
 
         self.label_statut_mdp = QLabel("")
         self.label_statut_mdp.setStyleSheet("font-size: 12px;")
-        layout.addWidget(self.label_statut_mdp)
+        bloc.addWidget(self.label_statut_mdp)
 
         bouton = QPushButton("Changer le mot de passe")
         bouton.setCursor(Qt.PointingHandCursor)
+        bouton.setMaximumWidth(largeur_champ)
         bouton.setStyleSheet(self._style_bouton("#1a5276", "#154360"))
         bouton.clicked.connect(self._changer_mot_de_passe)
-        layout.addWidget(bouton)
+        bloc.addWidget(bouton)
 
         return bloc
 
@@ -147,42 +135,36 @@ class ParametresPage(QWidget):
 
     # --- Bloc 2 : Notifications par email ---
     def _bloc_notifications(self):
-        bloc = QFrame()
-        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        bloc.setGraphicsEffect(self._ombre_legere())
-        layout = QVBoxLayout(bloc)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
-
-        titre = QLabel("Notifications par email")
-        titre.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
-        layout.addWidget(titre)
+        bloc, _ = titre_section("Notifications par email")
+        largeur_champ = 420
 
         description = QLabel(
             "Adresse(s) qui reçoivent le rapport météorologique automatique de 6h ainsi que "
             "les rapports envoyés manuellement depuis la page Rapports. "
             "Plusieurs adresses peuvent être séparées par une virgule."
         )
-        description.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        description.setStyleSheet(f"color: {COULEURS['neutre']}; font-size: 12px;")
         description.setWordWrap(True)
-        layout.addWidget(description)
+        bloc.addWidget(description)
 
-        layout.addWidget(QLabel("Destinataire(s)"))
+        bloc.addWidget(QLabel("Destinataire(s)"))
         self.champ_destinataires = QLineEdit()
         self.champ_destinataires.setPlaceholderText("exemple@domaine.com, autre@domaine.com")
         self.champ_destinataires.setText(os.getenv("SMTP_DESTINATAIRES", ""))
+        self.champ_destinataires.setMaximumWidth(largeur_champ)
         self.champ_destinataires.setStyleSheet(self._style_champ())
-        layout.addWidget(self.champ_destinataires)
+        bloc.addWidget(self.champ_destinataires)
 
         self.label_statut_email = QLabel("")
         self.label_statut_email.setStyleSheet("font-size: 12px;")
-        layout.addWidget(self.label_statut_email)
+        bloc.addWidget(self.label_statut_email)
 
         bouton = QPushButton("Enregistrer le(s) destinataire(s)")
         bouton.setCursor(Qt.PointingHandCursor)
+        bouton.setMaximumWidth(largeur_champ)
         bouton.setStyleSheet(self._style_bouton("#1a5276", "#154360"))
         bouton.clicked.connect(self._enregistrer_destinataires)
-        layout.addWidget(bouton)
+        bloc.addWidget(bouton)
 
         return bloc
 
@@ -218,35 +200,29 @@ class ParametresPage(QWidget):
 
     # --- Bloc 3 : Sauvegarde de la base de données ---
     def _bloc_sauvegarde(self):
-        bloc = QFrame()
-        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        bloc.setGraphicsEffect(self._ombre_legere())
-        layout = QVBoxLayout(bloc)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
-
-        titre = QLabel("Sauvegarde de la base de données")
-        titre.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
-        layout.addWidget(titre)
+        bloc, _ = titre_section("Sauvegarde de la base de données")
 
         description = QLabel(
             "Une sauvegarde automatique est déjà générée chaque jour à 6h00 dans le dossier "
             "« Sauvegardes/ » (les 14 plus récentes sont conservées, les plus anciennes supprimées). "
             "Le bouton ci-dessous permet en plus de créer une sauvegarde manuelle à l'emplacement de ton choix."
         )
-        description.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        description.setStyleSheet(f"color: {COULEURS['neutre']}; font-size: 12px;")
         description.setWordWrap(True)
-        layout.addWidget(description)
+        bloc.addWidget(description)
 
         self.label_statut_sauvegarde = QLabel("")
         self.label_statut_sauvegarde.setStyleSheet("font-size: 12px;")
-        layout.addWidget(self.label_statut_sauvegarde)
+        bloc.addWidget(self.label_statut_sauvegarde)
 
-        bouton = QPushButton("💾  Créer une sauvegarde")
+        ligne_bouton = QHBoxLayout()
+        bouton = QPushButton("Créer une sauvegarde")
         bouton.setCursor(Qt.PointingHandCursor)
         bouton.setStyleSheet(self._style_bouton("#27ae60", "#1e8449"))
         bouton.clicked.connect(self._creer_sauvegarde)
-        layout.addWidget(bouton)
+        ligne_bouton.addWidget(bouton)
+        ligne_bouton.addStretch()
+        bloc.addLayout(ligne_bouton)
 
         return bloc
 

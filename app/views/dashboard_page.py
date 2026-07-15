@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QFrame,
-    QGraphicsDropShadowEffect, QComboBox, QTableWidget, QTableWidgetItem,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
+    QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QPushButton, QAbstractItemView
 )
 from PySide6.QtCore import Qt, QUrl, Signal, QTimer
@@ -139,19 +139,22 @@ class DashboardPage(QWidget):
         self.layout_alertes.setSpacing(12)
         layout.addLayout(self.layout_alertes)
 
-        # --- Cartes de stats ---
-        self.grille_cartes = QGridLayout()
-        self.grille_cartes.setSpacing(16)
+        layout.addSpacing(10)
+
+        # --- Bande de statistiques (typographie + séparateurs, pas de cartes-boîtes) ---
+        self.grille_cartes = QHBoxLayout()
+        self.grille_cartes.setSpacing(0)
         layout.addLayout(self.grille_cartes)
 
         # --- Corps : graphique (gauche) + mini-tableau/carte (droite) ---
         corps = QHBoxLayout()
-        corps.setSpacing(16)
+        corps.setSpacing(24)
 
-        corps.addWidget(self._bloc_graphique(), stretch=1)
+        corps.addWidget(self._bloc_graphique(), stretch=3)
+        corps.addWidget(self._diviseur_vertical())
 
         colonne_droite = QVBoxLayout()
-        colonne_droite.setSpacing(16)
+        colonne_droite.setSpacing(20)
         self.bloc_risque = self._creer_bloc_stations_a_risque()
         colonne_droite.addWidget(self.bloc_risque)
         colonne_droite.addWidget(self._bloc_carte_miniature())
@@ -170,6 +173,16 @@ class DashboardPage(QWidget):
         self._minuteur = QTimer(self)
         self._minuteur.timeout.connect(self.rafraichir)
         self._minuteur.start(INTERVALLE_RAFRAICHISSEMENT_MS)
+
+    def resizeEvent(self, event):
+        """Sans ça, le graphique matplotlib garde la mise en page calculée lors du
+        premier tracé et ne remplit pas le panneau une fois la fenêtre agrandie
+        (grand vide sous le graphique) — on relayoute/redessine sans requêter la
+        base de nouveau."""
+        super().resizeEvent(event)
+        if hasattr(self, "canvas") and self.figure.axes:
+            self.figure.tight_layout()
+            self.canvas.draw()
 
     # ============== RAFRAÎCHISSEMENT GLOBAL ==============
 
@@ -194,65 +207,69 @@ class DashboardPage(QWidget):
         mois = MOIS_FR[dt.month - 1]
         return f"{jour} {dt.day:02d} {mois} {dt.year}"
 
-    # ============== UTILITAIRES DE STYLE ==============
+    # ============== BANDE DE STATISTIQUES ==============
 
-    def _ombre_legere(self):
-        ombre = QGraphicsDropShadowEffect()
-        ombre.setBlurRadius(18)
-        ombre.setXOffset(0)
-        ombre.setYOffset(2)
-        ombre.setColor(QColor(0, 0, 0, 28))
-        return ombre
-
-    # ============== CARTES DE STATISTIQUES ==============
-
-    def _creer_carte(self, cle, icone, titre, couleur):
-        """Crée une carte et conserve les références des labels dynamiques
+    def _creer_carte(self, cle, titre, couleur):
+        """Crée un bloc de statistique (typographie + liséré de couleur, pas de
+        carte-boîte avec ombre) et conserve les références des labels dynamiques
         (valeur + tendance) dans self._valeurs_cartes[cle] pour mise à jour ultérieure."""
-        carte = QFrame()
-        carte.setStyleSheet(
-            f"QFrame {{ background-color: white; border-radius: 12px; "
-            f"border-left: 4px solid {couleur}; }}"
+        conteneur = QWidget()
+        conteneur.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(conteneur)
+        layout.setContentsMargins(20, 0, 20, 4)
+        layout.setSpacing(8)
+
+        liseré = QFrame()
+        liseré.setFixedHeight(3)
+        liseré.setStyleSheet(f"background-color: {couleur}; border: none;")
+        layout.addWidget(liseré)
+
+        layout.addSpacing(6)
+
+        ligne_valeur = QHBoxLayout()
+        ligne_valeur.setSpacing(8)
+        label_valeur = QLabel("—")
+        label_valeur.setStyleSheet(
+            f"font-size: 30px; font-weight: 700; color: {COULEURS['texte']}; "
+            f"border: none; background: transparent;"
         )
-        carte.setGraphicsEffect(self._ombre_legere())
-        carte.setMinimumHeight(104)
-
-        layout = QVBoxLayout(carte)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(4)
-
-        ligne_haut = QHBoxLayout()
-        label_icone = QLabel(icone)
-        _appliquer_police_emoji(label_icone, 16)
-        ligne_haut.addWidget(label_icone)
-        ligne_haut.addStretch()
+        ligne_valeur.addWidget(label_valeur)
 
         label_tendance = QLabel("")
-        label_tendance.setStyleSheet("font-size: 11px; font-weight: bold;")
-        ligne_haut.addWidget(label_tendance)
-        layout.addLayout(ligne_haut)
+        label_tendance.setStyleSheet("font-size: 12px; font-weight: bold; border: none; background: transparent;")
+        ligne_valeur.addWidget(label_tendance)
+        ligne_valeur.addStretch()
+        layout.addLayout(ligne_valeur)
 
-        label_valeur = QLabel("—")
-        label_valeur.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {couleur};")
-        layout.addWidget(label_valeur)
-
-        label_titre = QLabel(titre)
-        label_titre.setStyleSheet(f"color: {COULEURS['neutre']}; font-size: 12px;")
+        label_titre = QLabel(titre.upper())
+        label_titre.setStyleSheet(
+            f"color: {COULEURS['neutre']}; font-size: 10.5px; font-weight: 600; "
+            f"letter-spacing: 0.5px; border: none; background: transparent;"
+        )
         layout.addWidget(label_titre)
+        layout.addStretch()
 
         self._valeurs_cartes[cle] = {"valeur": label_valeur, "tendance": label_tendance}
-        return carte
+        return conteneur
+
+    def _diviseur_vertical(self):
+        diviseur = QFrame()
+        diviseur.setFixedWidth(1)
+        diviseur.setStyleSheet("background-color: #e3e7eb; border: none;")
+        return diviseur
 
     def _mettre_a_jour_cartes(self):
         if not self._valeurs_cartes:
             cartes = [
-                ("stations", "📡", "Stations actives", COULEURS["primaire"]),
-                ("mesures", "📊", "Mesures aujourd'hui", COULEURS["succes"]),
-                ("temperature", "🌡", "Température moyenne", COULEURS["attention"]),
-                ("surveillance", "🟢", "Surveillance", COULEURS["violet"]),
+                ("stations", "Stations actives", COULEURS["primaire"]),
+                ("mesures", "Mesures aujourd'hui", COULEURS["succes"]),
+                ("temperature", "Température moyenne", COULEURS["attention"]),
+                ("surveillance", "Surveillance", COULEURS["violet"]),
             ]
-            for i, (cle, icone, titre_carte, couleur) in enumerate(cartes):
-                self.grille_cartes.addWidget(self._creer_carte(cle, icone, titre_carte, couleur), 0, i)
+            for i, (cle, titre_carte, couleur) in enumerate(cartes):
+                if i > 0:
+                    self.grille_cartes.addWidget(self._diviseur_vertical())
+                self.grille_cartes.addWidget(self._creer_carte(cle, titre_carte, couleur), stretch=1)
 
         nb_stations = self._compter_stations_actives()
         nb_mesures_aujourdhui, temp_moyenne, delta_temp = self._stats_mesures_aujourdhui()
@@ -265,16 +282,17 @@ class DashboardPage(QWidget):
             f"{temp_moyenne} °C" if temp_moyenne is not None else "—"
         )
         label_tendance = self._valeurs_cartes["temperature"]["tendance"]
+        style_tendance = "font-size: 11px; font-weight: bold; border: none; background: transparent; color: {};"
         if delta_temp is None:
             label_tendance.setText("")
         elif abs(delta_temp) < 0.05:
             label_tendance.setText("→ stable")
-            label_tendance.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {COULEURS['neutre']};")
+            label_tendance.setStyleSheet(style_tendance.format(COULEURS['neutre']))
         else:
             fleche = "▲" if delta_temp > 0 else "▼"
             couleur = COULEURS["danger"] if delta_temp > 0 else COULEURS["info"]
             label_tendance.setText(f"{fleche} {abs(delta_temp):.1f} °C")
-            label_tendance.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {couleur};")
+            label_tendance.setStyleSheet(style_tendance.format(couleur))
 
         self._valeurs_cartes["surveillance"]["valeur"].setText(
             "Active" if nb_mesures_aujourdhui > 0 else "En attente"
@@ -348,52 +366,74 @@ class DashboardPage(QWidget):
         nb_deficit = sum(1 for i in indicateurs if (i.bilan_hydrique_7j or 0) < 0)
 
         valeurs = {
-            "gel": ("❄", "Stations en gel", nb_gel, COULEURS["info"]),
-            "stress": ("🌡", "Stress thermique", nb_stress, COULEURS["attention"]),
-            "deficit": ("💧", "Déficit hydrique (7j)", nb_deficit, COULEURS["danger"]),
+            "gel": ("Stations en gel", nb_gel, COULEURS["info"]),
+            "stress": ("Stress thermique", nb_stress, COULEURS["attention"]),
+            "deficit": ("Déficit hydrique (7j)", nb_deficit, COULEURS["danger"]),
         }
 
         if not self._alertes_frames:
-            for cle, (icone, titre, nombre, couleur) in valeurs.items():
-                frame, label = self._creer_carte_alerte(icone, titre, couleur)
-                self._alertes_frames[cle] = {"frame": frame, "label": label, "titre": titre, "couleur": couleur}
-                self.layout_alertes.addWidget(frame)
+            for i, (cle, (titre, nombre, couleur)) in enumerate(valeurs.items()):
+                if i > 0:
+                    self.layout_alertes.addWidget(self._diviseur_vertical())
+                liseré, label = self._creer_carte_alerte(titre, couleur)
+                self._alertes_frames[cle] = {"liseré": liseré, "label": label, "titre": titre, "couleur": couleur}
 
-        for cle, (icone, titre, nombre, couleur) in valeurs.items():
+        for cle, (titre, nombre, couleur) in valeurs.items():
             refs = self._alertes_frames[cle]
             actif = nombre > 0
-            couleur_fond = couleur if actif else "#ecf0f1"
-            couleur_texte = "white" if actif else COULEURS["neutre"]
-            refs["frame"].setStyleSheet(f"QFrame {{ background-color: {couleur_fond}; border-radius: 8px; }}")
-            refs["label"].setText(f"{icone}  {nombre} — {titre}")
-            refs["label"].setStyleSheet(f"color: {couleur_texte}; font-weight: bold; font-size: 12px;")
+            couleur_active = couleur if actif else "#d5dbdb"
+            couleur_texte = couleur if actif else COULEURS["neutre"]
+            refs["liseré"].setStyleSheet(f"background-color: {couleur_active}; border: none;")
+            refs["label"].setText(f"{nombre} — {titre}")
+            refs["label"].setStyleSheet(
+                f"color: {couleur_texte}; font-weight: {700 if actif else 500}; font-size: 13px; "
+                f"border: none; background: transparent;"
+            )
 
-    def _creer_carte_alerte(self, icone, titre, couleur):
-        carte = QFrame()
-        carte.setMinimumHeight(56)
-        layout = QHBoxLayout(carte)
-        layout.setContentsMargins(14, 8, 14, 8)
+    def _creer_carte_alerte(self, titre, couleur):
+        conteneur = QWidget()
+        conteneur.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(conteneur)
+        layout.setContentsMargins(20, 0, 20, 0)
+        layout.setSpacing(6)
+
+        liseré = QFrame()
+        liseré.setFixedHeight(3)
+        layout.addWidget(liseré)
 
         label = QLabel()
-        _appliquer_police_emoji(label)
         layout.addWidget(label)
-        layout.addStretch()
 
-        return carte, label
+        self.layout_alertes.addWidget(conteneur, stretch=1)
+        return liseré, label
 
     # ============== GRAPHIQUE ENRICHI ==============
 
+    def _titre_section(self, texte):
+        """Titre de section flanqué d'une règle inférieure — remplace la
+        carte-boîte blanche avec ombre par une structure typographique."""
+        bloc_titre = QVBoxLayout()
+        bloc_titre.setSpacing(8)
+        label = QLabel(texte)
+        label.setStyleSheet(f"font-weight: 700; color: {COULEURS['texte']}; font-size: 13.5px; border: none;")
+        bloc_titre.addWidget(label)
+        regle = QFrame()
+        regle.setFixedHeight(2)
+        regle.setStyleSheet(f"background-color: {COULEURS['primaire']}; border: none;")
+        bloc_titre.addWidget(regle)
+        return bloc_titre, label
+
     def _bloc_graphique(self):
-        bloc = QFrame()
-        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 12px; }")
-        bloc.setGraphicsEffect(self._ombre_legere())
+        bloc = QWidget()
+        bloc.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(bloc)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        bloc_titre, _ = self._titre_section("Tendance — 7 derniers jours (moyenne toutes stations)")
+        layout.addLayout(bloc_titre)
 
         entete = QHBoxLayout()
-        label = QLabel("Tendance — 7 derniers jours (moyenne toutes stations)")
-        label.setStyleSheet(f"font-weight: bold; color: {COULEURS['texte']}; font-size: 13px;")
-        entete.addWidget(label)
         entete.addStretch()
 
         self.combo_variable = QComboBox()
@@ -412,8 +452,11 @@ class DashboardPage(QWidget):
 
         self.figure = Figure(figsize=(5, 2.0))
         self.canvas = FigureCanvasQTAgg(self.figure)
-        self.canvas.setMaximumHeight(190)
-        layout.addWidget(self.canvas)
+        # Pas de plafond de hauteur : le graphique remplit l'espace vertical
+        # disponible du panneau (auparavant limité à 190px, laissant un grand
+        # vide sous le graphique alors que la colonne de droite est plus haute).
+        self.canvas.setMinimumHeight(260)
+        layout.addWidget(self.canvas, stretch=1)
 
         return bloc
 
@@ -442,6 +485,11 @@ class DashboardPage(QWidget):
             valeurs = [r.valeur_moyenne for r in resultats]
             ax.plot(jours, valeurs, color=COULEURS["primaire"], linewidth=1.6, marker="o", markersize=3)
             ax.fill_between(jours, valeurs, color=COULEURS["primaire"], alpha=0.08)
+            # fill_between remplit jusqu'à 0 par défaut, ce qui forçait l'axe Y à
+            # démarrer à 0 lors de l'auto-échelle et écrasait la variation réelle
+            # de la courbe. On borne explicitement l'axe autour des données.
+            marge = (max(valeurs) - min(valeurs)) * 0.15 or 1
+            ax.set_ylim(min(valeurs) - marge, max(valeurs) + marge)
         else:
             ax.text(0.5, 0.5, "Aucune donnée disponible", ha='center', va='center', color=COULEURS["neutre"])
 
@@ -457,20 +505,20 @@ class DashboardPage(QWidget):
     # ============== MINI-TABLEAU STATIONS À RISQUE ==============
 
     def _creer_bloc_stations_a_risque(self):
-        bloc = QFrame()
-        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 12px; }")
-        bloc.setGraphicsEffect(self._ombre_legere())
+        bloc = QWidget()
+        bloc.setStyleSheet("background: transparent;")
         bloc.setMaximumHeight(340)
         layout = QVBoxLayout(bloc)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-        label = QLabel("Stations à risque aujourd'hui")
-        label.setStyleSheet(f"font-weight: bold; color: {COULEURS['texte']}; font-size: 13px;")
-        layout.addWidget(label)
+        bloc_titre, _ = self._titre_section("Stations à risque aujourd'hui")
+        layout.addLayout(bloc_titre)
 
         self.label_risque_vide = QLabel("Aucune alerte active.")
-        self.label_risque_vide.setStyleSheet(f"color: {COULEURS['succes']}; font-size: 12px;")
+        self.label_risque_vide.setStyleSheet(
+            f"color: {COULEURS['succes']}; font-size: 12px; border: none; background: transparent;"
+        )
         layout.addWidget(self.label_risque_vide)
 
         self.table_risque = QTableWidget()
@@ -492,13 +540,9 @@ class DashboardPage(QWidget):
         self.table_risque.cellDoubleClicked.connect(self._on_double_clic_station)
         layout.addWidget(self.table_risque)
 
-        self.label_risque_plus = QLabel("")
-        self.label_risque_plus.setStyleSheet(f"color: {COULEURS['neutre']}; font-size: 11px;")
-        layout.addWidget(self.label_risque_plus)
-
         return bloc
 
-    def _mettre_a_jour_stations_a_risque(self, indicateurs, limite_affichee=9):
+    def _mettre_a_jour_stations_a_risque(self, indicateurs):
         a_risque = []
         for i in indicateurs:
             alertes = []
@@ -516,15 +560,15 @@ class DashboardPage(QWidget):
         if not a_risque:
             self.label_risque_vide.setVisible(True)
             self.table_risque.setVisible(False)
-            self.label_risque_plus.setText("")
             return
 
         self.label_risque_vide.setVisible(False)
         self.table_risque.setVisible(True)
 
-        lignes_affichees = a_risque[:limite_affichee]
-        self.table_risque.setRowCount(len(lignes_affichees))
-        for row, (station_id, nom, alertes) in enumerate(lignes_affichees):
+        # Toutes les stations à risque sont listées (la table défile elle-même
+        # si besoin) plutôt que de tronquer avec un "+ N autres".
+        self.table_risque.setRowCount(len(a_risque))
+        for row, (station_id, nom, alertes) in enumerate(a_risque):
             item_nom = QTableWidgetItem(nom)
             item_nom.setForeground(QColor(COULEURS["texte"]))
             item_alertes = QTableWidgetItem(alertes)
@@ -532,9 +576,6 @@ class DashboardPage(QWidget):
             self.table_risque.setItem(row, 0, item_nom)
             self.table_risque.setItem(row, 1, item_alertes)
             self._id_station_par_ligne[row] = station_id
-
-        restant = len(a_risque) - len(lignes_affichees)
-        self.label_risque_plus.setText(f"+ {restant} autre(s) station(s) à risque" if restant > 0 else "")
 
     def _on_double_clic_station(self, row, _colonne):
         station_id = self._id_station_par_ligne.get(row)
@@ -544,33 +585,36 @@ class DashboardPage(QWidget):
     # ============== CARTE MINIATURE ==============
 
     def _bloc_carte_miniature(self):
-        bloc = QFrame()
-        bloc.setStyleSheet("QFrame { background-color: white; border-radius: 12px; }")
-        bloc.setGraphicsEffect(self._ombre_legere())
+        bloc = QWidget()
+        bloc.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(bloc)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-        label = QLabel("Statut des stations")
-        label.setStyleSheet(f"font-weight: bold; color: {COULEURS['texte']}; font-size: 13px;")
-        layout.addWidget(label)
+        bloc_titre, _ = self._titre_section("Statut des stations")
+        layout.addLayout(bloc_titre)
 
         legende = QHBoxLayout()
         for couleur, texte in [
             (COULEURS["succes"], "OK"), (COULEURS["attention"], "Déficit"), (COULEURS["danger"], "Gel / stress")
         ]:
             point = QLabel("●")
-            point.setStyleSheet(f"color: {couleur}; font-size: 12px;")
+            point.setStyleSheet(f"color: {couleur}; font-size: 12px; border: none; background: transparent;")
             legende.addWidget(point)
             texte_label = QLabel(texte)
-            texte_label.setStyleSheet(f"color: {COULEURS['neutre']}; font-size: 11px;")
+            texte_label.setStyleSheet(
+                f"color: {COULEURS['neutre']}; font-size: 11px; border: none; background: transparent;"
+            )
             legende.addWidget(texte_label)
             legende.addSpacing(8)
         legende.addStretch()
         layout.addLayout(legende)
 
         self.vue_web = QWebEngineView()
-        self.vue_web.setFixedHeight(200)
-        layout.addWidget(self.vue_web)
+        # Hauteur minimale plutôt que fixe : la carte remplit l'espace restant
+        # de la colonne de droite au lieu de laisser un grand vide sous elle.
+        self.vue_web.setMinimumHeight(200)
+        layout.addWidget(self.vue_web, stretch=1)
 
         return bloc
 
