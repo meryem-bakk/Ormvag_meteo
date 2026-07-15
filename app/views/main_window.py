@@ -17,9 +17,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-# Pages enregistrées pour le rafraîchissement auto (event_bus) une fois construites.
-NOMS_PAGES_RAFRAICHISSABLES = {"Paramètres"}
-
 
 class MainWindow(QMainWindow):
     def __init__(self, utilisateur):
@@ -167,8 +164,10 @@ class MainWindow(QMainWindow):
             ancienne.deleteLater()
             self.pages.insertWidget(index, page)
             self._pages_construites.add(index)
-            if nom_page in NOMS_PAGES_RAFRAICHISSABLES:
-                self.pages_refs[nom_page] = page
+            # Enregistrée pour l'actualisation auto (event_bus) sans condition sur le nom :
+            # _rafraichir_toutes_les_pages() vérifie déjà hasattr(page, "rafraichir_donnees")
+            # avant d'appeler, donc rien à filtrer ici.
+            self.pages_refs[nom_page] = page
 
         self.pages.setCurrentIndex(index)
 
