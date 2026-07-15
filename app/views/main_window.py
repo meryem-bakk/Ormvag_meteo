@@ -17,6 +17,15 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+# Pages groupées par section pour clarifier la hiérarchie de navigation
+# (auparavant une liste plate de 10 boutons sans distinction).
+GROUPES_NAVIGATION = [
+    ("VUE D'ENSEMBLE", ["Tableau de bord", "Carte"]),
+    ("DONNÉES", ["Import des données", "Stations", "Données", "Graphiques"]),
+    ("ANALYSE", ["Indicateurs agroclimatiques", "Rapports"]),
+    ("ADMINISTRATION", ["Utilisateurs", "Paramètres"]),
+]
+
 
 class MainWindow(QMainWindow):
     def __init__(self, utilisateur):
@@ -61,7 +70,7 @@ class MainWindow(QMainWindow):
 
         # --- Sidebar ---
         sidebar = QFrame()
-        sidebar.setFixedWidth(220)
+        sidebar.setFixedWidth(232)
         sidebar.setStyleSheet("background-color: #1a5276;")
         layout_sidebar = QVBoxLayout(sidebar)
         layout_sidebar.setContentsMargins(0, 20, 0, 20)
@@ -76,36 +85,31 @@ class MainWindow(QMainWindow):
         self.boutons_sidebar = []
         self.bouton_sidebar_actif = None
 
-        pages_navigation = [
-            "Tableau de bord",
-            "Import des données",
-            "Stations",
-            "Données",
-            "Graphiques",
-            "Indicateurs agroclimatiques",
-            "Carte",
-            "Rapports",
-            "Utilisateurs",
-            "Paramètres",
-        ]
-
         self.pages_refs = {}
         self._fabriques_pages = {}
         self._noms_pages = {}
         self._pages_construites = set()
 
-        for nom_page in pages_navigation:
-            bouton = QPushButton(nom_page)
-            bouton.setCursor(Qt.PointingHandCursor)
-            bouton.setStyleSheet(self._style_bouton_sidebar(False))
-            index = self.pages.count()
-            bouton.clicked.connect(lambda checked=False, i=index, btn=bouton: self._changer_page(i, btn))
-            layout_sidebar.addWidget(bouton)
-            self.boutons_sidebar.append(bouton)
+        for titre_groupe, pages_du_groupe in GROUPES_NAVIGATION:
+            label_groupe = QLabel(titre_groupe)
+            label_groupe.setStyleSheet(
+                "color: #6d93b3; font-size: 10.5px; font-weight: bold; "
+                "letter-spacing: 0.6px; padding: 14px 16px 4px 16px;"
+            )
+            layout_sidebar.addWidget(label_groupe)
 
-            self._fabriques_pages[index] = self._fabrique_page(nom_page)
-            self._noms_pages[index] = nom_page
-            self.pages.addWidget(self._creer_page_chargement())
+            for nom_page in pages_du_groupe:
+                bouton = QPushButton(nom_page)
+                bouton.setCursor(Qt.PointingHandCursor)
+                bouton.setStyleSheet(self._style_bouton_sidebar(False))
+                index = self.pages.count()
+                bouton.clicked.connect(lambda checked=False, i=index, btn=bouton: self._changer_page(i, btn))
+                layout_sidebar.addWidget(bouton)
+                self.boutons_sidebar.append(bouton)
+
+                self._fabriques_pages[index] = self._fabrique_page(nom_page)
+                self._noms_pages[index] = nom_page
+                self.pages.addWidget(self._creer_page_chargement())
 
         self.label_derniere_maj = QLabel("Dernière mise à jour auto : jamais")
         self.label_derniere_maj.setStyleSheet("color: #85a9c4; font-size: 10px; padding: 4px 16px;")

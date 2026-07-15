@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox,
-    QFrame, QHeaderView, QMessageBox, QGraphicsDropShadowEffect, QCheckBox
+    QHeaderView, QMessageBox, QCheckBox
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -11,13 +11,14 @@ from app.models.user import User
 from app.models.role import Role
 from app.models.historique_modification import HistoriqueModification
 from app.services.historique import enregistrer as enregistrer_historique
+from app.utils.theme import COULEURS, titre_section
 
 
 class UtilisateursPage(QWidget):
     def __init__(self, utilisateur_connecte):
         super().__init__()
         self.utilisateur_connecte = utilisateur_connecte
-        self.setStyleSheet("background-color: #f4f6f8;")
+        self.setStyleSheet(f"background-color: {COULEURS['fond']};")
         self.user_en_edition_id = None
         self._build_ui()
         self._charger_roles_dans_combo()
@@ -30,20 +31,12 @@ class UtilisateursPage(QWidget):
         layout.setSpacing(18)
 
         titre = QLabel("Gestion des utilisateurs")
-        titre.setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50;")
+        titre.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {COULEURS['texte']};")
         layout.addWidget(titre)
 
         # --- Formulaire ---
-        formulaire = QFrame()
-        formulaire.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        formulaire.setGraphicsEffect(self._ombre_legere())
-        layout_form_ext = QVBoxLayout(formulaire)
-        layout_form_ext.setContentsMargins(20, 16, 20, 16)
-        layout_form_ext.setSpacing(10)
-
-        self.label_mode_form = QLabel("Ajouter un utilisateur")
-        self.label_mode_form.setStyleSheet("font-weight: bold; color: #1a5276; font-size: 13px;")
-        layout_form_ext.addWidget(self.label_mode_form)
+        bloc_titre_form, self.label_mode_form = titre_section("Ajouter un utilisateur")
+        layout.addLayout(bloc_titre_form)
 
         style_champ = """
             QLineEdit, QComboBox {
@@ -92,12 +85,12 @@ class UtilisateursPage(QWidget):
         for col in range(5):
             grille.setColumnStretch(col, 1)
 
-        layout_form_ext.addLayout(grille)
+        layout.addLayout(grille)
 
         self.case_actif = QCheckBox("Compte actif")
         self.case_actif.setChecked(True)
-        self.case_actif.setStyleSheet("color: #2c3e50; margin-top: 4px;")
-        layout_form_ext.addWidget(self.case_actif)
+        self.case_actif.setStyleSheet(f"color: {COULEURS['texte']}; margin-top: 4px;")
+        layout.addWidget(self.case_actif)
 
         layout_boutons_form = QHBoxLayout()
         layout_boutons_form.addStretch()
@@ -115,21 +108,21 @@ class UtilisateursPage(QWidget):
         self.bouton_valider.clicked.connect(self._valider_formulaire)
         layout_boutons_form.addWidget(self.bouton_valider)
 
-        layout_form_ext.addLayout(layout_boutons_form)
-        layout.addWidget(formulaire)
+        layout.addLayout(layout_boutons_form)
+        layout.addSpacing(4)
 
         # --- Actions sur sélection ---
         layout_actions = QHBoxLayout()
-        layout_actions.addWidget(self._label("color: #7f8c8d; font-size: 12px;", "Sélectionne une ligne pour la modifier :"))
+        layout_actions.addWidget(self._label(f"color: {COULEURS['neutre']}; font-size: 12px;", "Sélectionne une ligne pour la modifier :"))
         layout_actions.addStretch()
 
-        self.bouton_modifier = QPushButton("✎  Modifier")
+        self.bouton_modifier = QPushButton("Modifier")
         self.bouton_modifier.setCursor(Qt.PointingHandCursor)
         self.bouton_modifier.setStyleSheet(self._style_bouton("#e67e22", "#d35400"))
         self.bouton_modifier.clicked.connect(self._charger_dans_formulaire)
         layout_actions.addWidget(self.bouton_modifier)
 
-        self.bouton_reinitialiser_mdp = QPushButton("🔑  Réinitialiser le mot de passe")
+        self.bouton_reinitialiser_mdp = QPushButton("Réinitialiser le mot de passe")
         self.bouton_reinitialiser_mdp.setCursor(Qt.PointingHandCursor)
         self.bouton_reinitialiser_mdp.setStyleSheet(self._style_bouton("#8e44ad", "#6c3483"))
         self.bouton_reinitialiser_mdp.clicked.connect(self._reinitialiser_mot_de_passe)
@@ -167,9 +160,9 @@ class UtilisateursPage(QWidget):
         layout.addWidget(self.tableau)
 
         # --- Historique des modifications ---
-        titre_historique = QLabel("Historique des modifications")
-        titre_historique.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-top: 12px;")
-        layout.addWidget(titre_historique)
+        layout.addSpacing(6)
+        bloc_titre_historique, _ = titre_section("Historique des modifications")
+        layout.addLayout(bloc_titre_historique)
 
         self.tableau_historique = QTableWidget()
         self.tableau_historique.setColumnCount(4)
@@ -200,14 +193,6 @@ class UtilisateursPage(QWidget):
         label = QLabel(texte)
         label.setStyleSheet(style)
         return label
-
-    def _ombre_legere(self):
-        ombre = QGraphicsDropShadowEffect()
-        ombre.setBlurRadius(16)
-        ombre.setXOffset(0)
-        ombre.setYOffset(2)
-        ombre.setColor(QColor(0, 0, 0, 25))
-        return ombre
 
     def _style_bouton(self, couleur, couleur_hover):
         return f"""

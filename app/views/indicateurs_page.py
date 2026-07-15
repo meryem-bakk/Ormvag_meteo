@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QTableWidget, QTableWidgetItem, QFrame, QHeaderView, QGraphicsDropShadowEffect, QGridLayout,
+    QTableWidget, QTableWidgetItem, QFrame, QHeaderView, QGridLayout,
     QAbstractItemView, QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer
@@ -13,6 +13,7 @@ from app.models.mesure import Mesure
 from app.workers.import_worker import IndicateursWorker
 from app.services.alertes import detecter_alertes, detecter_anomalies_temperature
 from app.services.detection_anomalies_ml import detecter_anomalies_mesures
+from app.utils.theme import COULEURS as PALETTE, diviseur_horizontal
 
 
 class IndicateursPage(QWidget):
@@ -124,11 +125,7 @@ class IndicateursPage(QWidget):
         self.label_statut.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         layout.addWidget(self.label_statut)
 
-        controles = QFrame()
-        controles.setStyleSheet("QFrame { background-color: white; border-radius: 10px; }")
-        controles.setGraphicsEffect(self._ombre_legere())
-        layout_controles = QHBoxLayout(controles)
-        layout_controles.setContentsMargins(16, 12, 16, 12)
+        layout_controles = QHBoxLayout()
         label_station = QLabel("Station :")
         label_station.setStyleSheet("color: #5d6d7e; font-size: 13px; font-weight: 600; border: none; background: transparent;")
         layout_controles.addWidget(label_station)
@@ -140,7 +137,8 @@ class IndicateursPage(QWidget):
         self.combo_station.currentIndexChanged.connect(self._rafraichir)
         layout_controles.addWidget(self.combo_station)
         layout_controles.addStretch()
-        layout.addWidget(controles)
+        layout.addLayout(layout_controles)
+        layout.addWidget(diviseur_horizontal())
 
         layout.addWidget(self._label_section("Alertes météo"))
         self.zone_alertes = QVBoxLayout()
@@ -256,14 +254,6 @@ class IndicateursPage(QWidget):
             QPushButton:disabled {{ background-color: #bdc3c7; }}
         """
 
-    def _ombre_legere(self):
-        ombre = QGraphicsDropShadowEffect()
-        ombre.setBlurRadius(16)
-        ombre.setXOffset(0)
-        ombre.setYOffset(2)
-        ombre.setColor(QColor(0, 0, 0, 25))
-        return ombre
-
     def _rgba(self, couleur_hex, alpha=0.12):
         couleur_hex = couleur_hex.lstrip("#")
         r = int(couleur_hex[0:2], 16)
@@ -370,57 +360,42 @@ class IndicateursPage(QWidget):
             return
 
         cartes = [
-            ("🌧", "Cumul pluie (7j)", f"{dernier.cumul_pluie_7j:.1f} mm" if dernier.cumul_pluie_7j is not None else "—", "#1a5276"),
-            ("🌧", "Cumul pluie (30j)", f"{dernier.cumul_pluie_30j:.1f} mm" if dernier.cumul_pluie_30j is not None else "—", "#2980b9"),
-            ("💧", "Bilan hydrique (7j)", f"{dernier.bilan_hydrique_7j:+.1f} mm" if dernier.bilan_hydrique_7j is not None else "—",
+            ("Cumul pluie (7j)", f"{dernier.cumul_pluie_7j:.1f} mm" if dernier.cumul_pluie_7j is not None else "—", "#1a5276"),
+            ("Cumul pluie (30j)", f"{dernier.cumul_pluie_30j:.1f} mm" if dernier.cumul_pluie_30j is not None else "—", "#2980b9"),
+            ("Bilan hydrique (7j)", f"{dernier.bilan_hydrique_7j:+.1f} mm" if dernier.bilan_hydrique_7j is not None else "—",
              "#27ae60" if (dernier.bilan_hydrique_7j or 0) >= 0 else "#c0392b"),
-            ("☀", "Jours sans pluie", str(dernier.jours_sans_pluie) if dernier.jours_sans_pluie is not None else "—", "#e67e22"),
-            ("❄", "Gel détecté", "Oui" if dernier.gel_detecte else "Non", "#c0392b" if dernier.gel_detecte else "#27ae60"),
-            ("🌡", "Stress thermique", "Oui" if dernier.stress_thermique else "Non", "#c0392b" if dernier.stress_thermique else "#27ae60"),
-            ("🌱", "GDD cumulé (saison)", f"{dernier.gdd_cumule_saison:.0f}" if dernier.gdd_cumule_saison is not None else "—", "#8e44ad"),
+            ("Jours sans pluie", str(dernier.jours_sans_pluie) if dernier.jours_sans_pluie is not None else "—", "#e67e22"),
+            ("Gel détecté", "Oui" if dernier.gel_detecte else "Non", "#c0392b" if dernier.gel_detecte else "#27ae60"),
+            ("Stress thermique", "Oui" if dernier.stress_thermique else "Non", "#c0392b" if dernier.stress_thermique else "#27ae60"),
+            ("GDD cumulé (saison)", f"{dernier.gdd_cumule_saison:.0f}" if dernier.gdd_cumule_saison is not None else "—", "#8e44ad"),
         ]
 
-        for i, (icone, titre, valeur, couleur) in enumerate(cartes):
-            self.grille_cartes.addWidget(self._creer_carte(icone, titre, valeur, couleur), i // 4, i % 4)
+        for i, (titre, valeur, couleur) in enumerate(cartes):
+            self.grille_cartes.addWidget(self._creer_carte(titre, valeur, couleur), i // 4, i % 4)
 
-    def _creer_carte(self, icone, titre, valeur, couleur):
-        carte = QFrame()
-        carte.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: 1px solid #eef0f2; }")
-        carte.setGraphicsEffect(self._ombre_legere())
-        carte.setMinimumHeight(96)
+    def _creer_carte(self, titre, valeur, couleur):
+        """Bloc de statistique plat (liséré + typographie), sans badge d'icône ni ombre."""
+        conteneur = QWidget()
+        conteneur.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(conteneur)
+        layout.setContentsMargins(0, 0, 0, 4)
+        layout.setSpacing(6)
 
-        layout = QHBoxLayout(carte)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(12)
-
-        badge = QLabel(icone)
-        badge.setFixedSize(44, 44)
-        badge.setAlignment(Qt.AlignCenter)
-        badge.setStyleSheet(f"""
-            QLabel {{
-                background-color: {self._rgba(couleur, 0.12)};
-                border-radius: 22px;
-                font-size: 19px;
-                border: none;
-            }}
-        """)
-        layout.addWidget(badge)
-
-        bloc_texte = QVBoxLayout()
-        bloc_texte.setSpacing(2)
+        liseré = QFrame()
+        liseré.setFixedHeight(3)
+        liseré.setStyleSheet(f"background-color: {couleur}; border: none;")
+        layout.addWidget(liseré)
 
         label_valeur = QLabel(valeur)
-        label_valeur.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {couleur}; border: none; background: transparent;")
-        bloc_texte.addWidget(label_valeur)
+        label_valeur.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {couleur}; border: none; background: transparent;")
+        layout.addWidget(label_valeur)
 
         label_titre = QLabel(titre)
         label_titre.setStyleSheet("color: #8592a3; font-size: 11.5px; border: none; background: transparent;")
         label_titre.setWordWrap(True)
-        bloc_texte.addWidget(label_titre)
+        layout.addWidget(label_titre)
 
-        layout.addLayout(bloc_texte, 1)
-
-        return carte
+        return conteneur
 
     # ------------------------------------------------------------------
     # Historique
