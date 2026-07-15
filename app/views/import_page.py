@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from app.workers.import_worker import ImportManuelWorker, TacheQuotidienneWorker
+from app.utils.event_bus import event_bus
 
 
 class ImportPage(QWidget):
@@ -141,6 +142,8 @@ class ImportPage(QWidget):
         self.worker.start()
 
     def _import_manuel_termine(self, total):
-        self._ajouter_log(f"\nImport terminé : {total} mesure(s).")
+        self._ajouter_log(f"\nImport terminé : {total} mesure(s), indicateurs recalculés, "
+                           f"toutes les pages ont été rafraîchies.")
         self.bouton_tache_complete.setEnabled(True)
         self.bouton_choisir_fichier.setEnabled(True)
+        event_bus.donnees_mises_a_jour.emit()

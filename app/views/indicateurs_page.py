@@ -181,6 +181,16 @@ class IndicateursPage(QWidget):
         layout.addWidget(self.tableau)
 
         layout.addWidget(self._label_section("Anomalies capteur détectées"))
+        legende_anomalies = QLabel(
+            "⚠ règle fixe (seuil dépassé) — 🤖 IA (Isolation Forest) : combinaison de "
+            "température, humidité, pluie et vent statistiquement inhabituelle pour la "
+            "station, même si aucun seuil n'est franchi individuellement. Un score IA proche "
+            "de 0 signale une anomalie modérée (ex. vague de chaleur sèche réelle) ; ce n'est "
+            "pas forcément une panne de capteur."
+        )
+        legende_anomalies.setStyleSheet("color: #7f8c8d; font-size: 11px; font-style: italic; padding: 0 0 4px 0;")
+        legende_anomalies.setWordWrap(True)
+        layout.addWidget(legende_anomalies)
         self.zone_anomalies = QVBoxLayout()
         self.zone_anomalies.setSpacing(6)
         layout.addLayout(self.zone_anomalies)

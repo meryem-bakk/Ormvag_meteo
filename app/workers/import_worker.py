@@ -25,7 +25,12 @@ class ImportManuelWorker(QThread):
 
     def run(self):
         from importer_donnees_reelles import importer_fichier
+        from app.services.calcul_indicateurs import calculer_indicateurs
+
         total = importer_fichier(self.chemin_fichier, log=self.ligne_log.emit)
+        # Sans ça, les nouvelles mesures restent invisibles des indicateurs tant que la
+        # tâche 6h ou un recalcul manuel n'est pas déclenché ailleurs.
+        calculer_indicateurs(log=self.ligne_log.emit)
         self.termine.emit(total)
 
 class IndicateursWorker(QThread):
