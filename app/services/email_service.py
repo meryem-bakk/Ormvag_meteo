@@ -1,10 +1,17 @@
 import os
+import time
+import socket
 import mimetypes
 import smtplib
 from email.message import EmailMessage
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Absorbe les coupures DNS/réseau passagères (ex. [Errno 11001] getaddrinfo
+# failed) : quelques nouvelles tentatives espacées plutôt qu'un échec immédiat.
+NB_TENTATIVES_ENVOI = 3
+DELAI_ENTRE_TENTATIVES_S = 5
 
 
 def envoyer_rapport_par_email(chemin_fichier, sujet, corps):
@@ -36,7 +43,19 @@ def envoyer_rapport_par_email(chemin_fichier, sujet, corps):
             filename=os.path.basename(chemin_fichier)
         )
 
-    with smtplib.SMTP(hote, port) as serveur:
-        serveur.starttls()
-        serveur.login(utilisateur, mot_de_passe)
-        serveur.send_message(message)
+    derniere_erreur = None
+    for tentative in range(1, NB_TENTATIVES_ENVOI + 1):
+        try:
+            with smtplib.SMTP(hote, port) as serveur:
+                serveur.starttls()
+                serveur.login(utilisateur, mot_de_passe)
+                serveur.send_message(message)
+            return
+        except (socket.gaierror, OSError, smtplib.SMTPException) as e:
+            derniere_erreur = e
+            if tentative < NB_TENTATIVES_ENVOI:
+                print(f"[email_service] Tentative {tentative}/{NB_TENTATIVES_ENVOI} échouée "
+                      f"({e}) — nouvel essai dans {DELAI_ENTRE_TENTATIVES_S}s...")
+                time.sleep(DELAI_ENTRE_TENTATIVES_S)
+
+    raise derniere_erreur

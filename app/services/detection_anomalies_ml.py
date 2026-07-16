@@ -7,13 +7,19 @@ Si ce fichier est absent (ex. après un clone frais du dépôt sans avoir relanc
 l'entraînement), la détection ML est simplement désactivée sans erreur.
 """
 import os
+import sys
 import joblib
 import pandas as pd
 
-CHEMIN_MODELE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "ML", "detecteur_anomalies.joblib"
-)
+# En exécutable PyInstaller, __file__ pointe vers le dossier d'extraction
+# temporaire (sys._MEIPASS), pas vers le projet — le modèle doit alors être
+# cherché à côté de l'exécutable plutôt que relativement au code source.
+if getattr(sys, "frozen", False):
+    _RACINE_PROJET = os.path.dirname(sys.executable)
+else:
+    _RACINE_PROJET = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+CHEMIN_MODELE = os.path.join(_RACINE_PROJET, "ML", "detecteur_anomalies.joblib")
 
 _cache_modele = None
 _modele_absent_signale = False

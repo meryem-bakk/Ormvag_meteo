@@ -24,6 +24,7 @@ dlls_requises = [
     "liblzma.dll",
     "libbz2.dll",
     "sqlite3.dll",
+    "libexpat.dll",  # dépendance de pyexpat.pyd, requise par matplotlib.font_manager (via plistlib)
 ]
 
 binaries_supplementaires = []
