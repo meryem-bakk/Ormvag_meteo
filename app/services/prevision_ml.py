@@ -7,11 +7,18 @@ fichier versionné). Si l'un des deux est absent, la prévision est indisponible
 sans erreur bloquante pour le reste de l'application.
 """
 import os
+import sys
 from datetime import timedelta
 
 import numpy as np
 
-_RACINE_PROJET = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# En exécutable PyInstaller, __file__ pointe vers le dossier d'extraction
+# temporaire (sys._MEIPASS), pas vers le projet — les modèles doivent alors
+# être cherchés à côté de l'exécutable plutôt que relativement au code source.
+if getattr(sys, "frozen", False):
+    _RACINE_PROJET = os.path.dirname(sys.executable)
+else:
+    _RACINE_PROJET = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DOSSIER_ML = os.path.join(_RACINE_PROJET, "ML")
 CHEMIN_MODELE = os.path.join(DOSSIER_ML, "modele_lstm.keras")
 CHEMIN_PARAMETRES = os.path.join(DOSSIER_ML, "parametres_lstm.npz")
