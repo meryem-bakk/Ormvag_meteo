@@ -77,6 +77,23 @@ a = Analysis(
     cipher=block_cipher,
 )
 
+# --- Retire le clavier virtuel Qt (non utilisé, application de bureau standard) ---
+# Ces fichiers sont embarqués automatiquement par le hook PySide6 (dépendance
+# binaire de QtQuick/QML, utilisé par QtWebEngine), mais "excludes" ci-dessus ne
+# joue que sur les imports Python — il faut filtrer les binaires directement.
+# Un des DLL de ce lot (Qt6VirtualKeyboard.dll) a été observé provoquant une
+# erreur d'extraction au démarrage de l'exécutable figé.
+MOTIFS_A_RETIRER = ["virtualkeyboard"]
+
+
+def _a_retirer(nom_fichier):
+    nom = nom_fichier.lower()
+    return any(motif in nom for motif in MOTIFS_A_RETIRER)
+
+
+a.binaries = [x for x in a.binaries if not _a_retirer(x[0])]
+a.datas = [x for x in a.datas if not _a_retirer(x[0])]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
