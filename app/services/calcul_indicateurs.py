@@ -37,9 +37,13 @@ def calculer_indicateurs(log=print):
     date_limite_chargement = date.today() - timedelta(days=FENETRE_CHARGEMENT_JOURS)
 
     for station in stations:
+        # Seules les mesures confirmées ("Mesuré") alimentent les indicateurs : une
+        # "Prévision" pas encore remplacée par la vraie mesure ne doit pas fausser les
+        # cumuls de pluie, le bilan hydrique ou les jours sans pluie.
         mesures = session.query(Mesure).filter(
             Mesure.station_id == station.id,
             Mesure.date_heure >= date_limite_chargement,
+            Mesure.type_donnee == "Mesuré",
         ).order_by(Mesure.date_heure).all()
 
         if not mesures:
