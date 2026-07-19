@@ -27,14 +27,22 @@ def _debut_saison_agricole(annee_reference):
     return date(pd.Timestamp.now().year - 1, 9, 1)
 
 
-def calculer_indicateurs(log=print):
+def calculer_indicateurs(log=print, forcer_tout=False):
+    """`forcer_tout=True` : usage exceptionnel/ponctuel — recharge et recalcule tout
+    l'historique disponible (ignore FENETRE_CHARGEMENT_JOURS et le "déjà stable" de
+    FENETRE_RECALCUL_JOURS), pour purger un historique contaminé par d'anciennes
+    mesures encore taguées "Prévision" au moment où elles ont été calculées. À ne
+    pas utiliser en fonctionnement normal (bien plus lent qu'un recalcul incrémental)."""
     session = SessionLocal()
     stations = session.query(Station).filter_by(actif=True).all()
 
     debut_saison = _debut_saison_agricole(pd.Timestamp.now().year)
     total_calcule = 0
 
-    date_limite_chargement = date.today() - timedelta(days=FENETRE_CHARGEMENT_JOURS)
+    date_limite_chargement = (
+        date(2000, 1, 1) if forcer_tout
+        else date.today() - timedelta(days=FENETRE_CHARGEMENT_JOURS)
+    )
 
     for station in stations:
         # Seules les mesures confirmées ("Mesuré") alimentent les indicateurs : une
@@ -97,9 +105,20 @@ def calculer_indicateurs(log=print):
         }
         date_limite_recalcul = date.today() - timedelta(days=FENETRE_RECALCUL_JOURS)
 
+        if forcer_tout:
+            # Une date déjà en base mais absente de df (ex. jour redevenu "Prévision
+            # pure" après le filtre "Mesuré uniquement") est orpheline : sans ce
+            # nettoyage, elle garderait indéfiniment son ancienne valeur polluée.
+            dates_orphelines = dates_existantes - set(df["date"])
+            if dates_orphelines:
+                session.query(IndicateurJournalier).filter(
+                    IndicateurJournalier.station_id == station.id,
+                    IndicateurJournalier.date.in_(dates_orphelines),
+                ).delete(synchronize_session=False)
+
         nb_ignores = 0
         for _, ligne in df.iterrows():
-            if ligne["date"] in dates_existantes and ligne["date"] < date_limite_recalcul:
+            if not forcer_tout and ligne["date"] in dates_existantes and ligne["date"] < date_limite_recalcul:
                 nb_ignores += 1
                 continue
 
