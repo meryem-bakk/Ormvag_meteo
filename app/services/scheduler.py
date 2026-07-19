@@ -111,9 +111,17 @@ def tache_quotidienne_6h():
     jours_manques = _jours_manques() or [_date_reference_6h()]
     jours_a_couvrir = len(jours_manques)
 
+    # Fenetre minimale de 15 jours (et non jours_a_couvrir + 2) : le site source
+    # renvoie parfois la journee en cours en "Prevision" avant de la confirmer en
+    # "Mesure" quelques jours plus tard. Une fenetre trop courte ne laisse jamais
+    # a l'import quotidien la chance de revenir corriger ces lignes, qui restent
+    # alors bloquees en "Prevision" indefiniment (voir calcul_indicateurs.py).
+    JOURS_MIN_REIMPORT = 15
+
     try:
         from import_automatique import lancer_import_complet
-        total_importe, erreurs = lancer_import_complet(jours_a_recuperer=jours_a_couvrir + 2, log=print)
+        total_importe, erreurs = lancer_import_complet(
+            jours_a_recuperer=max(jours_a_couvrir + 2, JOURS_MIN_REIMPORT), log=print)
         print(f"[Scheduler 6h] Import terminé : {total_importe} mesure(s), {len(erreurs)} erreur(s).")
     except Exception as e:
         print(f"[Scheduler 6h] Erreur lors de l'import automatique : {e}")
