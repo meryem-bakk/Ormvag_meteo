@@ -19,3 +19,6 @@ ML/*.keras
 ML/*.joblib
 !ML/detecteur_anomalies.joblib
 ML/log_entrainement*.txt
+# Installeur PostgreSQL (~370 Mo) : telecharge manuellement, jamais commite (voir
+# installateur/installer.py pour l'URL officielle EnterpriseDB).
+installateur/bin/
