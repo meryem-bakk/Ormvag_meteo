@@ -226,13 +226,18 @@ class IndicateursPage(QWidget):
             IndicateurJournalier.date >= date.today() - timedelta(days=30)
         ).order_by(IndicateurJournalier.date.desc()).all()
 
-        derniere_mesure = session.query(Mesure).filter_by(
-            station_id=station_id
+        # Seules les mesures confirmées ("Mesuré") alimentent alertes et détection
+        # d'anomalies : une "Prévision" pas encore remplacée par la vraie mesure ne
+        # doit pas être traitée comme une condition réelle actuelle.
+        derniere_mesure = session.query(Mesure).filter(
+            Mesure.station_id == station_id,
+            Mesure.type_donnee == "Mesuré",
         ).order_by(Mesure.date_heure.desc()).first()
 
         mesures_historique = session.query(Mesure).filter(
             Mesure.station_id == station_id,
-            Mesure.date_heure >= date.today() - timedelta(days=30)
+            Mesure.date_heure >= date.today() - timedelta(days=30),
+            Mesure.type_donnee == "Mesuré",
         ).order_by(Mesure.date_heure).all()
 
         session.close()

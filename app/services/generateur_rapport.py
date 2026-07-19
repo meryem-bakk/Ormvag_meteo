@@ -431,25 +431,30 @@ def _annee_campagne(date_fin):
 
 def _cumul_reseau_periode(session, station_ids, jour_debut, jour_fin):
     """Cumul de pluie (mm) moyenné sur les stations données, entre `jour_debut` et
-    `jour_fin` inclus (les mesures sont journalières, un enregistrement par jour)."""
+    `jour_fin` inclus (les mesures sont journalières, un enregistrement par jour).
+    Ne compte que les mesures confirmées ("Mesuré") : une "Prévision" pas encore
+    remplacée par la vraie mesure ne doit pas fausser un cumul officiel."""
     if not station_ids or jour_debut > jour_fin:
         return 0.0
     total = session.query(func.sum(Mesure.pluie)).filter(
         Mesure.station_id.in_(station_ids),
         Mesure.date_heure >= datetime.combine(jour_debut, time.min),
         Mesure.date_heure <= datetime.combine(jour_fin, time.min),
+        Mesure.type_donnee == "Mesuré",
     ).scalar()
     return float(total) / len(station_ids) if total is not None else 0.0
 
 
 def _cumul_station_periode(session, station_id, jour_debut, jour_fin):
-    """Cumul de pluie (mm) d'une station entre `jour_debut` et `jour_fin` inclus."""
+    """Cumul de pluie (mm) d'une station entre `jour_debut` et `jour_fin` inclus.
+    Ne compte que les mesures confirmées ("Mesuré"), voir _cumul_reseau_periode."""
     if jour_debut > jour_fin:
         return 0.0
     total = session.query(func.sum(Mesure.pluie)).filter(
         Mesure.station_id == station_id,
         Mesure.date_heure >= datetime.combine(jour_debut, time.min),
         Mesure.date_heure <= datetime.combine(jour_fin, time.min),
+        Mesure.type_donnee == "Mesuré",
     ).scalar()
     return float(total) if total is not None else 0.0
 

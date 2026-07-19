@@ -87,7 +87,7 @@ def _envoyer_rapport_pour_jour(jour):
         corps=(
             "Bonjour,\n\n"
             "Veuillez trouver ci-joint le relevé des précipitations du réseau ORMVAG "
-            "(pluie 24h, période pluvieuse, cumuls de campagne par station et par province).\n"
+            "(pluie 24h, 15 derniers jours, cumuls de campagne par station et par province).\n"
             f"Pluie moyenne réseau (dernières 24h) : {pluie_moyenne_reseau:.1f} mm.\n\n"
             "Cordialement,\nORMVAG — Système météo automatisé"
         ),
