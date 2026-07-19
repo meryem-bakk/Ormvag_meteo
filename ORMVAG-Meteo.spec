@@ -68,6 +68,17 @@ a = Analysis(
     "unittest.result",
     "unittest.runner",
     "unittest.suite",
+    # Le detecteur d'anomalies (ML/detecteur_anomalies.joblib) est un modele
+    # scikit-learn charge dynamiquement via joblib.load/pickle : le code ne
+    # fait jamais "import sklearn" explicitement, donc PyInstaller ne le
+    # detectait pas et l'exe plantait silencieusement (ModuleNotFoundError
+    # avale par le mode windowed) des l'ouverture de la page Indicateurs.
+    "sklearn",
+    "sklearn.ensemble",
+    "sklearn.ensemble._iforest",
+    "sklearn.tree",
+    "sklearn.utils",
+    "sklearn.neighbors",
 ],
     hookspath=[],
     hooksconfig={},
@@ -95,26 +106,25 @@ a.datas = [x for x in a.datas if not _a_retirer(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Mode "onedir" plutot que "onefile" : l'exe onefile doit se re-decompresser
+# entierement dans un nouveau dossier temporaire a CHAQUE lancement, et
+# l'antivirus rescanne alors des centaines de fichiers (pandas, scikit-learn)
+# comme s'ils etaient inconnus, ce qui rend le premier usage de pages lourdes
+# (Indicateurs agroclimatiques, qui charge le modele IA) tres lent. En onedir,
+# les fichiers restent extraits en permanence a cote de l'exe : demarrage
+# rapide et reproductible. L'app est de toute facon deja distribuee sous
+# forme de dossier (.env, assets/, ML/ a cote de l'exe), donc rien ne change
+# pour l'utilisateur.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="ORMVAG-Meteo",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    # UPX (compression des binaires pour reduire la taille de l'exe) a corrompu
-    # a deux reprises des fichiers differents (clavier virtuel Qt, plugin AVIF
-    # de Pillow), provoquant des echecs de decompression au demarrage
-    # ("decompression resulted in return code -1"). Desactive : l'exe est plus
-    # gros mais fiable, plutot que d'exclure les fichiers un par un a chaque
-    # nouvelle erreur decouverte.
     upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,        # équivalent de --windowed
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -122,4 +132,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon="assets/logo.ico",             # mettre le chemin d'un .ico ici si vous en avez un, ex: "assets/icone.ico"
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="ORMVAG-Meteo",
 )
