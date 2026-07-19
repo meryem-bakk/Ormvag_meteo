@@ -418,14 +418,9 @@ _LIBELLE_MOIS = {9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC", 1: "JAN", 2: "FEV",
                   3: "MAR", 4: "AVR", 5: "MAI", 6: "JUN", 7: "JUIL", 8: "AOUT"}
 _ORDRE_MOIS_CAMPAGNE = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]
 
-# Seuils utilisés pour détecter automatiquement le début de la "période pluvieuse" en
-# cours (bloc du bulletin SED sans définition officielle disponible) : on remonte
-# jour par jour depuis la fin du cycle et on considère que l'épisode pluvieux précédent
-# est terminé dès qu'on rencontre ce nombre de jours consécutifs sous ce seuil.
-SEUIL_JOUR_SEC_MM = 0.1
-MIN_JOURS_SECS_FIN_EPISODE = 3
-MAX_JOURS_RECHERCHE_EPISODE = 90
-
+# Fenêtre "Pluie 15 derniers jours" du relevé (remplace l'ancienne "période pluvieuse",
+# une heuristique sans définition officielle du SED) : jour_fin inclus + 14 jours avant.
+NB_JOURS_PERIODE_RECENTE = 15
 
 def _annee_campagne(date_fin):
     """Campagne agricole ORMVAG : du 1er septembre au 31 août. Renvoie
@@ -472,28 +467,6 @@ def _pluie_reseau_mois(session, station_ids, annee, mois):
     if not nb:
         return None
     return _cumul_reseau_periode(session, station_ids, debut, fin)
-
-
-def _debut_periode_pluvieuse(session, station_ids, jour_fin):
-    """Détecte le début de l'épisode pluvieux en cours, en remontant jour par jour
-    depuis `jour_fin` jusqu'à rencontrer MIN_JOURS_SECS_FIN_EPISODE jours consécutifs
-    sous SEUIL_JOUR_SEC_MM (moyenne réseau), ce qui marque la limite avec l'épisode
-    précédent. Heuristique documentée en l'absence d'une définition officielle du SED."""
-    debut = jour_fin
-    jours_secs_consecutifs = 0
-    curseur = jour_fin
-    for _ in range(MAX_JOURS_RECHERCHE_EPISODE):
-        pluie_jour = _cumul_reseau_periode(session, station_ids, curseur, curseur)
-        if pluie_jour > SEUIL_JOUR_SEC_MM:
-            debut = curseur
-            jours_secs_consecutifs = 0
-        else:
-            jours_secs_consecutifs += 1
-            if jours_secs_consecutifs >= MIN_JOURS_SECS_FIN_EPISODE:
-                break
-        curseur -= timedelta(days=1)
-    return debut
-
 
 def _construire_tableaux_mensuels(session, station_ids, date_fin, annee_debut_campagne):
     """Construit les deux tableaux mensuels du bulletin (pluie mensuelle et pluie
@@ -555,9 +528,9 @@ def _construire_tableaux_mensuels(session, station_ids, date_fin, annee_debut_ca
 def recuperer_releve_precipitations(date_fin=None):
     """Relevé des précipitations au format officiel SED "RELEVE DES PRECIPITATIONS
     POUR LA CAMPAGNE AGRICOLE" : par station, groupée par province avec moyennes —
-    pluie des dernières 24h, de la période pluvieuse en cours, de la campagne agricole
-    en cours (depuis le 1er septembre) et de la campagne n-1 à la même date. La fenêtre
-    24h est calée sur le cycle 6h00-6h00 (convention OMM), quelle que soit l'heure
+    pluie des dernières 24h, des 15 derniers jours, de la campagne agricole en cours
+    (depuis le 1er septembre) et de la campagne n-1 à la même date. La fenêtre 24h
+    est calée sur le cycle 6h00-6h00 (convention OMM), quelle que soit l'heure
     réelle d'exécution. Retourne (df, infos, tableau_mensuel)."""
     if date_fin is None:
         maintenant = datetime.now()
@@ -577,7 +550,7 @@ def recuperer_releve_precipitations(date_fin=None):
     stations = session.query(Station).filter_by(actif=True).order_by(Station.province, Station.nom).all()
     station_ids = [s.id for s in stations]
 
-    debut_periode_pluvieuse = _debut_periode_pluvieuse(session, station_ids, jour_fin)
+    debut_15j = jour_fin - timedelta(days=NB_JOURS_PERIODE_RECENTE - 1)
 
     lignes = []
     for station in stations:
@@ -585,8 +558,8 @@ def recuperer_releve_precipitations(date_fin=None):
             "Station": station.nom,
             "Province": station.province or "Non classée",
             "Pluie 24h (mm)": round(_cumul_station_periode(session, station.id, jour_fin, jour_fin), 1),
-            "Pluie période pluvieuse (mm)": round(
-                _cumul_station_periode(session, station.id, debut_periode_pluvieuse, jour_fin), 1),
+            "Pluie 15 derniers jours (mm)": round(
+                _cumul_station_periode(session, station.id, debut_15j, jour_fin), 1),
             "Pluie campagne n (mm)": round(
                 _cumul_station_periode(session, station.id, debut_campagne_n, jour_fin), 1),
             "Pluie campagne n-1 (mm)": round(
@@ -600,7 +573,7 @@ def recuperer_releve_precipitations(date_fin=None):
         "jour_fin": jour_fin,
         "libelle_campagne": libelle_campagne,
         "annee_debut_campagne": annee_debut_campagne,
-        "debut_periode_pluvieuse": debut_periode_pluvieuse,
+        "debut_15j": debut_15j,
         "debut_campagne_n": debut_campagne_n,
         "debut_campagne_n1": debut_campagne_n1,
         "jour_fin_n1": jour_fin_n1,
@@ -775,12 +748,12 @@ def generer_excel_releve_precipitations(chemin_sortie, df, infos, tableau_mensue
     ws["A3"] = f"Généré automatiquement le {datetime.now().strftime('%d/%m/%Y à %H:%M')}"
     ws["A3"].font = Font(size=8, italic=True, color="8a97a0")
 
-    entetes = ["STATIONS", "Pluie 24H (mm)", "Pluie période pluvieuse (mm)",
+    entetes = ["STATIONS", "Pluie 24H (mm)", "Pluie 15 derniers jours (mm)",
                "Pluie campagne (n) (mm)", "Pluie campagne (n-1) (mm)"]
     sous_entetes = [
         "",
         f"au {infos['jour_fin'].strftime('%d-%m-%Y')} à 6h",
-        f"{infos['debut_periode_pluvieuse'].strftime('%d-%m-%Y')} au "
+        f"{infos['debut_15j'].strftime('%d-%m-%Y')} au "
         f"{infos['jour_fin'].strftime('%d-%m-%Y')} à 6h",
         f"au {infos['jour_fin'].strftime('%d-%m-%Y')} à 6h",
         f"au {infos['jour_fin_n1'].strftime('%d-%m-%Y')} à 6h",
@@ -802,7 +775,7 @@ def generer_excel_releve_precipitations(chemin_sortie, df, infos, tableau_mensue
         wb.save(chemin_sortie)
         return
 
-    colonnes_valeurs = ["Pluie 24h (mm)", "Pluie période pluvieuse (mm)",
+    colonnes_valeurs = ["Pluie 24h (mm)", "Pluie 15 derniers jours (mm)",
                         "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)"]
 
     ligne = ligne_entete + 2
