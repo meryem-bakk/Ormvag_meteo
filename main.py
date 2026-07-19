@@ -1,6 +1,8 @@
 import os
 import sys
-from PySide6.QtWidgets import QApplication
+import traceback
+from datetime import datetime
+from PySide6.QtWidgets import QApplication, QMessageBox
 from app.views.login_window import LoginWindow
 from app.views.main_window import MainWindow
 from app.database import SessionLocal
@@ -18,6 +20,22 @@ if getattr(sys, "frozen", False):
     _RACINE_PROJET = os.path.dirname(sys.executable)
 else:
     _RACINE_PROJET = os.path.dirname(os.path.abspath(__file__))
+
+# En mode windowed (pas de console), une exception non interceptee dans un
+# slot Qt (ex. construction paresseuse d'une page) ne s'affiche nulle part :
+# l'app reste plantee silencieusement sur "Chargement...". On la journalise
+# et on previent l'utilisateur au lieu de la laisser disparaitre.
+def _gestionnaire_exceptions(exc_type, exc_value, exc_tb):
+    chemin_log = os.path.join(_RACINE_PROJET, "erreur.log")
+    with open(chemin_log, "a", encoding="utf-8") as f:
+        f.write(f"\n--- {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+    QMessageBox.critical(
+        None, "Erreur inattendue",
+        f"Une erreur est survenue :\n{exc_value}\n\nDétails dans erreur.log"
+    )
+
+sys.excepthook = _gestionnaire_exceptions
 
 app = QApplication(sys.argv)
 app.setWindowIcon(QIcon(os.path.join(_RACINE_PROJET, "assets", "logo.png")))
