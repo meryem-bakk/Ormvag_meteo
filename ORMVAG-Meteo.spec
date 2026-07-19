@@ -77,13 +77,12 @@ a = Analysis(
     cipher=block_cipher,
 )
 
-# --- Retire le clavier virtuel Qt (non utilisé, application de bureau standard) ---
-# Ces fichiers sont embarqués automatiquement par le hook PySide6 (dépendance
-# binaire de QtQuick/QML, utilisé par QtWebEngine), mais "excludes" ci-dessus ne
-# joue que sur les imports Python — il faut filtrer les binaires directement.
-# Un des DLL de ce lot (Qt6VirtualKeyboard.dll) a été observé provoquant une
-# erreur d'extraction au démarrage de l'exécutable figé.
-MOTIFS_A_RETIRER = ["virtualkeyboard"]
+# --- Retire des binaires inutiles embarqués automatiquement par les hooks ---
+# "excludes" ci-dessus ne joue que sur les imports Python — il faut filtrer les
+# binaires collectés automatiquement directement dans a.binaries/a.datas :
+# - clavier virtuel Qt (dépendance indirecte de QtQuick/QtWebEngine)
+# - plugin AVIF de Pillow (format d'image jamais utilisé par l'application)
+MOTIFS_A_RETIRER = ["virtualkeyboard", "_avif", "avifimageplugin"]
 
 
 def _a_retirer(nom_fichier):
@@ -107,7 +106,13 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX (compression des binaires pour reduire la taille de l'exe) a corrompu
+    # a deux reprises des fichiers differents (clavier virtuel Qt, plugin AVIF
+    # de Pillow), provoquant des echecs de decompression au demarrage
+    # ("decompression resulted in return code -1"). Desactive : l'exe est plus
+    # gros mais fiable, plutot que d'exclure les fichiers un par un a chaque
+    # nouvelle erreur decouverte.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,        # équivalent de --windowed
