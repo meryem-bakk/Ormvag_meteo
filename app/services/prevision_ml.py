@@ -6,11 +6,68 @@ normalisation nécessaires à l'inférence sont dans ML/parametres_lstm.npz (pet
 fichier versionné). Si l'un des deux est absent, la prévision est indisponible
 sans erreur bloquante pour le reste de l'application.
 """
+import math
 import os
 import sys
 from datetime import timedelta
 
 import numpy as np
+import requests
+
+# Doit rester strictement identique a DEGRES_DIRECTION dans ML/preparer_donnees_lstm.py
+# (encodage utilise a l'entrainement) : un decalage entre les deux fausserait les
+# predictions silencieusement.
+_DEGRES_DIRECTION = {"N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SW": 225, "W": 270, "NW": 315}
+
+_COLONNES_EXTERNES = ("pression_msl", "nebulosite")
+_URL_ARCHIVE_METEO = "https://archive-api.open-meteo.com/v1/archive"
+
+
+def _recuperer_meteo_externe(latitude, longitude, date_debut, date_fin, log=print):
+    """Pression/nebulosite (absentes du site ORMVAG) pour la fenetre d'inference, via
+    Open-Meteo (meme source que ML/telecharger_meteo_externe.py, utilisee a l'entrainement).
+    Retourne {date: {"pression_msl": ..., "nebulosite": ...}}, ou {} si indisponible
+    (pas de connexion, API en panne) - la prevision utilise alors 0.0 pour ces features."""
+    try:
+        reponse = requests.get(_URL_ARCHIVE_METEO, params={
+            "latitude": latitude,
+            "longitude": longitude,
+            "start_date": date_debut.isoformat(),
+            "end_date": date_fin.isoformat(),
+            "daily": "surface_pressure_mean,cloud_cover_mean",
+            "timezone": "Africa/Casablanca",
+        }, timeout=15)
+        reponse.raise_for_status()
+        donnees = reponse.json()["daily"]
+        return {
+            date_str: {"pression_msl": pression, "nebulosite": nebulosite}
+            for date_str, pression, nebulosite in zip(
+                donnees["time"], donnees["surface_pressure_mean"], donnees["cloud_cover_mean"])
+        }
+    except Exception as e:
+        log(f"[prevision_ml] Meteo externe (pression/nebulosite) indisponible : {e}")
+        return {}
+
+
+def _valeur_feature(mesure, colonne, meteo_externe_du_jour=None):
+    """Calcule la valeur d'une feature pour une mesure donnee - reproduit exactement
+    l'encodage de ML/preparer_donnees_lstm.py (colonnes brutes + vent_dir_sin/cos +
+    jour_sin/cos + pression_msl/nebulosite)."""
+    if colonne in _COLONNES_EXTERNES:
+        if not meteo_externe_du_jour:
+            return 0.0
+        return meteo_externe_du_jour.get(colonne, 0.0)
+    if colonne == "vent_dir_sin" or colonne == "vent_dir_cos":
+        degres = _DEGRES_DIRECTION.get(mesure.direction_vent)
+        if degres is None:
+            return 0.0
+        radian = math.radians(degres)
+        return math.sin(radian) if colonne == "vent_dir_sin" else math.cos(radian)
+    if colonne == "jour_sin" or colonne == "jour_cos":
+        jour_annee = mesure.date_heure.timetuple().tm_yday
+        angle = 2 * math.pi * jour_annee / 365.25
+        return math.sin(angle) if colonne == "jour_sin" else math.cos(angle)
+    return getattr(mesure, colonne) or 0.0
 
 # En exécutable PyInstaller, __file__ pointe vers le dossier d'extraction
 # temporaire (sys._MEIPASS), pas vers le projet — les modèles doivent alors
@@ -99,9 +156,16 @@ def prevoir_station(session_db, station, log=print):
     moyenne = parametres["moyenne"]
     ecart_type = parametres["ecart_type"]
 
+    meteo_externe = {}
+    if any(c in _COLONNES_EXTERNES for c in colonnes_features):
+        meteo_externe = _recuperer_meteo_externe(
+            station.latitude, station.longitude,
+            mesures[0].date_heure.date(), mesures[-1].date_heure.date(), log=log)
+
     valeurs = []
     for m in mesures:
-        ligne = [getattr(m, c) or 0.0 for c in colonnes_features]
+        externe_du_jour = meteo_externe.get(m.date_heure.date().isoformat())
+        ligne = [_valeur_feature(m, c, externe_du_jour) for c in colonnes_features]
         valeurs.append(ligne)
     X = np.array(valeurs, dtype=float)
     X_norm = (X - moyenne) / ecart_type

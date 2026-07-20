@@ -18,7 +18,7 @@ CHEMIN_DONNEES = os.path.join(os.path.dirname(__file__), "donnees_lstm.npz")
 CHEMIN_MODELE = os.path.join(os.path.dirname(__file__), "modele_lstm.keras")
 
 
-def construire_modele(nb_stations, nb_features, taille_fenetre, dim_embedding=8, unites_lstm=64):
+def construire_modele(nb_stations, nb_features, taille_fenetre, nb_cibles, dim_embedding=8, unites_lstm=64):
     entree_sequence = keras.Input(shape=(taille_fenetre, nb_features), name="sequence")
     entree_station = keras.Input(shape=(1,), name="station")
 
@@ -31,7 +31,7 @@ def construire_modele(nb_stations, nb_features, taille_fenetre, dim_embedding=8,
     x = layers.Concatenate()([x, embedding_station])
     x = layers.Dense(32, activation="relu")(x)
     x = layers.Dropout(0.2)(x)
-    sortie = layers.Dense(2, name="pluie_temperature")(x)
+    sortie = layers.Dense(nb_cibles, name="cibles")(x)
 
     modele = keras.Model(inputs=[entree_sequence, entree_station], outputs=sortie)
     modele.compile(optimizer="adam", loss="mse", metrics=["mae"])
@@ -56,7 +56,7 @@ def entrainer(epochs=30, batch_size=64, log=print):
     log(f"Train: {X_train.shape} | Val: {X_val.shape} | Test: {X_test.shape}")
     log(f"Stations: {nb_stations} | Features: {nb_features} | Fenêtre: {taille_fenetre} jours\n")
 
-    modele = construire_modele(nb_stations, nb_features, taille_fenetre)
+    modele = construire_modele(nb_stations, nb_features, taille_fenetre, nb_cibles=len(colonnes_cibles))
     modele.summary(print_fn=log)
 
     arret_anticipe = keras.callbacks.EarlyStopping(

@@ -6,6 +6,8 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -13,19 +15,58 @@ from app.database import SessionLocal
 from app.models.station import Station
 from app.models.mesure import Mesure
 
+# Directions relevees par les stations du reseau (voir diagnostic_qualite.py) :
+# seulement 5 valeurs en pratique (N, NE, NW, SE, SW), jamais de resolution plus
+# fine. Encodee en sinus/cosinus (grandeur circulaire : N et NNW doivent etre
+# "proches", pas aux deux extremes d'une echelle lineaire 0-360).
+# ATTENTION : cette table et l'encodage jour_sin/jour_cos ci-dessous sont
+# dupliques dans app/services/prevision_ml.py (inference) et doivent rester
+# strictement identiques a l'entrainement, sous peine de decalage silencieux.
+DEGRES_DIRECTION = {"N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SW": 225, "W": 270, "NW": 315}
+
 COLONNES_FEATURES = [
     "eto", "pluie", "temperature_min", "temperature", "temperature_max",
     "humidite_min", "humidite", "humidite_max", "rayonnement", "vent",
+    "pression_msl", "nebulosite",
+    "vent_dir_sin", "vent_dir_cos", "jour_sin", "jour_cos",
 ]
-COLONNES_CIBLES = ["pluie", "temperature"]
+COLONNES_CIBLES = ["pluie", "temperature", "eto"]
 
 TAILLE_FENETRE = 30              # jours d'historique en entrée pour prédire le jour suivant
 SEUIL_INTERPOLATION = 7          # trous <= 7 jours interpolés ; au-delà : segment coupé
 RATIOS_SPLIT = (0.8, 0.1, 0.1)   # train / val / test, par segment, dans l'ordre chronologique
 
+# pression_msl/nebulosite : absentes du site source ORMVAG, telechargees separement
+# (reanalyse ERA5, gratuite) par ML/telecharger_meteo_externe.py - relancer ce script
+# si meteo_externe.csv est absent ou trop ancien.
+COLONNES_EXTERNES = ["pression_msl", "nebulosite"]
+CHEMIN_METEO_EXTERNE = os.path.join(os.path.dirname(__file__), "meteo_externe.csv")
+_meteo_externe = None
+
+
+def _charger_meteo_externe():
+    global _meteo_externe
+    if _meteo_externe is None:
+        if not os.path.exists(CHEMIN_METEO_EXTERNE):
+            raise FileNotFoundError(
+                f"{CHEMIN_METEO_EXTERNE} introuvable - lancer ML/telecharger_meteo_externe.py d'abord."
+            )
+        df = pd.read_csv(CHEMIN_METEO_EXTERNE, parse_dates=["date"])
+        df["date"] = df["date"].dt.date
+        _meteo_externe = df.set_index(["station_id", "date"])
+    return _meteo_externe
+
+
+#  eto/pluie/temperatures/humidites/rayonnement/vent : colonnes brutes de Mesure.
+#  vent_dir_sin/cos et jour_sin/cos sont derivees, calculees ci-dessous ; pression_msl/
+#  nebulosite viennent de la fusion avec meteo_externe.csv.
+COLONNES_BRUTES = [c for c in COLONNES_FEATURES if c not in
+                    ("vent_dir_sin", "vent_dir_cos", "jour_sin", "jour_cos", *COLONNES_EXTERNES)]
+
 
 def charger_mesures_station(session, station_id):
-    """Charge uniquement les mesures réelles (pas les Prévisions) d'une station, triées par date."""
+    """Charge uniquement les mesures réelles (pas les Prévisions) d'une station, triées par
+    date, et encode la direction du vent (categorielle) en sinus/cosinus (grandeur circulaire)."""
     mesures = (
         session.query(Mesure)
         .filter(Mesure.station_id == station_id, Mesure.type_donnee == "Mesuré")
@@ -36,10 +77,28 @@ def charger_mesures_station(session, station_id):
         return pd.DataFrame()
 
     lignes = [
-        {"date": m.date_heure.date(), **{c: getattr(m, c) for c in COLONNES_FEATURES}}
+        {
+            "date": m.date_heure.date(),
+            **{c: getattr(m, c) for c in COLONNES_BRUTES},
+            "direction_vent": m.direction_vent,
+        }
         for m in mesures
     ]
-    return pd.DataFrame(lignes).drop_duplicates(subset="date").set_index("date").sort_index()
+    df = pd.DataFrame(lignes).drop_duplicates(subset="date").set_index("date").sort_index()
+
+    direction_rad = np.radians(df["direction_vent"].map(DEGRES_DIRECTION))
+    df["vent_dir_sin"] = np.sin(direction_rad)
+    df["vent_dir_cos"] = np.cos(direction_rad)
+    df = df.drop(columns=["direction_vent"])
+
+    meteo_externe = _charger_meteo_externe()
+    if station_id in meteo_externe.index.get_level_values("station_id"):
+        df = df.join(meteo_externe.loc[station_id, COLONNES_EXTERNES])
+    else:
+        for colonne in COLONNES_EXTERNES:
+            df[colonne] = np.nan
+
+    return df
 
 
 def segmenter_et_interpoler(df):
@@ -52,7 +111,19 @@ def segmenter_et_interpoler(df):
     index_complet = pd.date_range(df.index.min(), df.index.max(), freq="D").date
     df_complet = df.reindex(index_complet)
 
-    est_manquant = df_complet[COLONNES_FEATURES].isna().all(axis=1)
+    # jour_sin/jour_cos : encodage cyclique de la saisonnalite (la pluie au Maroc est tres
+    # saisonniere). Calcule directement depuis la date, donc jamais manquant meme sur un
+    # jour interpole/troue - contrairement aux variables mesurees ci-dessus.
+    jour_annee = pd.to_datetime(df_complet.index).dayofyear
+    angle = 2 * math.pi * jour_annee / 365.25
+    df_complet["jour_sin"] = np.sin(angle)
+    df_complet["jour_cos"] = np.cos(angle)
+
+    # jour_sin/jour_cos ne sont jamais manquants (derives de la date, pas de la mesure) :
+    # les exclure de la detection de trou, sinon aucune ligne ne serait jamais consideree
+    # manquante et la segmentation ne couperait plus jamais aux vraies pannes de longue duree.
+    colonnes_a_verifier = [c for c in COLONNES_FEATURES if c not in ("jour_sin", "jour_cos")]
+    est_manquant = df_complet[colonnes_a_verifier].isna().all(axis=1)
 
     segments_bruts = []
     debut_segment = 0
