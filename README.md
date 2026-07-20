@@ -45,12 +45,18 @@ main.py                # Point d'entrée de l'application
 
 ## Installation
 
-### Prérequis
+### Déploiement sur un poste utilisateur (sans Python)
+
+Pour un poste ne disposant pas encore de PostgreSQL, un installateur autonome (`Installateur-ORMVAG.exe`, voir `installateur/`) détecte si PostgreSQL est déjà actif, sinon l'installe silencieusement depuis l'installeur officiel EnterpriseDB embarqué, puis crée la base, le schéma et les données de base (rôles, compte admin, stations réelles). Lancer cet exécutable une seule fois, puis `ORMVAG-Meteo.exe` — voir la section [Construire les exécutables](#construire-les-exécutables).
+
+### Développement
+
+#### Prérequis
 
 - Python 3.10+
 - PostgreSQL installé et accessible
 
-### Étapes
+#### Étapes
 
 1. Cloner le dépôt :
    ```bash
@@ -92,6 +98,15 @@ main.py                # Point d'entrée de l'application
    python main.py
    ```
 
+## Construire les exécutables
+
+```bash
+venv\Scripts\pyinstaller.exe ORMVAG-Meteo.spec --noconfirm
+venv\Scripts\pyinstaller.exe Installateur.spec --noconfirm
+```
+
+Génère respectivement `dist/ORMVAG-Meteo/` et `dist/Installateur-ORMVAG/`. Les deux se distribuent sous forme de dossiers (l'exécutable accompagné de `assets/`, `ML/`, `.env`, etc., et de `bin/` pour l'installateur), à l'image d'une application portable — voir `installateur/installer.py` pour l'URL de téléchargement de l'installeur PostgreSQL embarqué (non versionné, ~370 Mo).
+
 ## Variables d'environnement
 
 Voir `.env.example` pour la liste complète. Principales variables :
@@ -122,7 +137,8 @@ Sans configuration SMTP valide dans `.env`, les autres étapes continuent de fon
 
 Reproduit la mise en page et les variables du bulletin utilisé par le SED (Service des Études et Données) :
 
-- **Par station**, groupées par province (Kénitra, Sidi Kacem, Sidi Slimane) avec une ligne de moyenne par province et une ligne totale "ORMVAG" : pluie des **24 dernières heures** (cycle 6h-6h, convention OMM), pluie de la **période pluvieuse en cours** (détectée automatiquement — épisode ininterrompu par plus de 3 jours secs consécutifs), pluie cumulée de la **campagne agricole en cours** (depuis le 1er septembre) et de la **campagne n-1** à la même date.
+- **Par station**, groupées par province (Kénitra, Sidi Kacem, Sidi Slimane) avec une ligne de moyenne par province et une ligne totale "ORMVAG" : pluie des **24 dernières heures** (cycle 6h-6h, convention OMM), pluie cumulée sur les **15 derniers jours glissants**, pluie cumulée de la **campagne agricole en cours** (depuis le 1er septembre) et de la **campagne n-1** à la même date.
+- Seules les mesures confirmées (`type_donnee == "Mesuré"`) alimentent ces cumuls et les indicateurs agroclimatiques : une donnée encore taguée "Prévision" par le site source (pas encore remplacée par la vraie mesure) n'est jamais comptée comme réelle.
 - **Deux tableaux mensuels** (pluie mensuelle et pluie cumulative, de septembre au mois en cours) comparant l'année en cours, l'année n-1 et la **normale sur 30 ans**. La base ne remonte qu'à ~10 ans : les valeurs de normale sont reprises telles quelles du bulletin officiel SED (`NORMALE_30_ANS_MENSUELLE` dans `app/services/generateur_rapport.py`) plutôt que recalculées, et à mettre à jour manuellement si le SED communique une normale révisée.
 - Un graphique Excel natif (barres groupées, branché directement sur les cellules du tableau "PLUIE MENSUELLE") compare visuellement l'année en cours, l'année n-1 et la normale 30 ans, avec des badges rappelant les cumuls totaux de campagne.
 
@@ -169,6 +185,7 @@ Toute création/modification de compte utilisateur, changement de rôle, activat
 - Changer le mot de passe administrateur par défaut après la première connexion.
 - Les fichiers de données réelles (`.sql`, `.xlsx`, `.csv`) ne sont pas versionnés — voir `.gitignore`.
 - Historique des modifications sur les comptes/rôles (voir section dédiée ci-dessus).
+- En exécutable packagé (sans console), une exception non interceptée est journalisée dans `erreur.log` (à côté de l'exécutable) et affichée à l'utilisateur, plutôt que de provoquer un blocage silencieux (`main.py`).
 
 ## Licence
 
