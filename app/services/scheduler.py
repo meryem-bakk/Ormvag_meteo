@@ -118,11 +118,13 @@ def tache_quotidienne_6h():
     # alors bloquees en "Prevision" indefiniment (voir calcul_indicateurs.py).
     JOURS_MIN_REIMPORT = 15
 
+    import_reussi = False
     try:
         from import_automatique import lancer_import_complet
         total_importe, erreurs = lancer_import_complet(
             jours_a_recuperer=max(jours_a_couvrir + 2, JOURS_MIN_REIMPORT), log=print)
         print(f"[Scheduler 6h] Import terminé : {total_importe} mesure(s), {len(erreurs)} erreur(s).")
+        import_reussi = True
     except Exception as e:
         print(f"[Scheduler 6h] Erreur lors de l'import automatique : {e}")
 
@@ -150,7 +152,17 @@ def tache_quotidienne_6h():
     except Exception as e:
         print(f"[Scheduler 6h] Erreur lors de la sauvegarde automatique : {e}")
 
-    _marquer_tache_executee()
+    # Le marqueur n'avance que si l'import a reussi : une panne reseau transitoire
+    # (voir erreur ci-dessus) ne doit pas faire passer la journee pour "traitee" -
+    # sans quoi l'import ne serait retente qu'au prochain cycle de 6h, potentiellement
+    # le lendemain, alors que la connexion peut deja etre revenue quelques minutes
+    # plus tard. Les autres etapes (indicateurs, rapport, sauvegarde) s'executent
+    # quand meme sur les donnees deja disponibles, marqueur ou non.
+    if import_reussi:
+        _marquer_tache_executee()
+    else:
+        print("[Scheduler 6h] Import echoue : la tache sera retentee au prochain "
+              "demarrage plutot que consideree comme terminee pour aujourd'hui.")
     event_bus.donnees_mises_a_jour.emit()
     print("[Scheduler 6h] Tâche quotidienne terminée, pages notifiées.")
 
