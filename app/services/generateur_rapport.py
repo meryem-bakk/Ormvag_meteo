@@ -530,6 +530,43 @@ def _construire_tableaux_mensuels(session, station_ids, date_fin, annee_debut_ca
     return {"mensuel": lignes_mensuel, "cumulatif": lignes_cumul}
 
 
+def _connexion_pluie_brute(log=print):
+    """Ouvre une session authentifiée vers le site source pour récupérer les relevés
+    bruts (pas de 15 min), utilisés pour un cumul 6h-6h précis. Retourne None si la
+    connexion échoue (réseau indisponible, identifiants absents...) : le rapport doit
+    quand même se générer, avec un repli sur l'agrégé journalier (voir _pluie_24h)."""
+    try:
+        from import_automatique import se_connecter
+        return se_connecter(log=log)
+    except Exception as e:
+        log(f"[Rapport] Connexion au site source impossible, repli sur l'agrégé "
+            f"journalier pour Pluie 24h : {e}")
+        return None
+
+
+def _pluie_24h(session, session_web, station, jour_fin, log=print):
+    """Pluie du cycle 6h-6h (convention OMM) se terminant le matin de `jour_fin`.
+    Calculée à partir des relevés bruts au pas de 15 min quand la connexion au site
+    source est disponible (fenêtre exacte, qui ne correspond à aucune frontière de
+    jour calendaire) ; sinon, repli sur l'agrégé journalier de la veille (jour_fin
+    n'a lui-même pas encore de mesure confirmée à l'heure où le rapport se génère,
+    6h du matin — voir _cumul_station_periode)."""
+    if session_web is not None:
+        try:
+            from import_automatique import IDS_SITE, cumul_pluie_brute
+            id_site = IDS_SITE.get(station.identifiant_externe)
+            if id_site is not None:
+                debut = datetime.combine(jour_fin - timedelta(days=1), time(6, 0))
+                fin = datetime.combine(jour_fin, time(6, 0))
+                return cumul_pluie_brute(session_web, id_site, debut, fin)
+        except Exception as e:
+            log(f"[Rapport] Pluie 24h réelle indisponible pour {station.nom}, "
+                f"repli sur l'agrégé journalier : {e}")
+
+    veille = jour_fin - timedelta(days=1)
+    return _cumul_station_periode(session, station.id, veille, veille)
+
+
 def recuperer_releve_precipitations(date_fin=None):
     """Relevé des précipitations au format officiel SED "RELEVE DES PRECIPITATIONS
     POUR LA CAMPAGNE AGRICOLE" : par station, groupée par province avec moyennes —
@@ -557,12 +594,14 @@ def recuperer_releve_precipitations(date_fin=None):
 
     debut_15j = jour_fin - timedelta(days=NB_JOURS_PERIODE_RECENTE - 1)
 
+    session_web = _connexion_pluie_brute()
+
     lignes = []
     for station in stations:
         lignes.append({
             "Station": station.nom,
             "Province": station.province or "Non classée",
-            "Pluie 24h (mm)": round(_cumul_station_periode(session, station.id, jour_fin, jour_fin), 1),
+            "Pluie 24h (mm)": round(_pluie_24h(session, session_web, station, jour_fin), 1),
             "Pluie 15 derniers jours (mm)": round(
                 _cumul_station_periode(session, station.id, debut_15j, jour_fin), 1),
             "Pluie campagne n (mm)": round(

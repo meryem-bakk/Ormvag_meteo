@@ -203,7 +203,7 @@ class ParametresPage(QWidget):
         bloc, _ = titre_section("Sauvegarde de la base de données")
 
         description = QLabel(
-            "Une sauvegarde automatique est déjà générée chaque jour à 6h00 dans le dossier "
+            "Une sauvegarde automatique est déjà générée chaque jour à 8h00 dans le dossier "
             "« Sauvegardes/ » (les 14 plus récentes sont conservées, les plus anciennes supprimées). "
             "Le bouton ci-dessous permet en plus de créer une sauvegarde manuelle à l'emplacement de ton choix."
         )
