@@ -8,14 +8,23 @@
 # sans avoir à retoucher le $env:PATH à chaque fois.
 
 import os
+import sys
 
 block_cipher = None
 
 # --- DLL système nécessaires à _ctypes/bcrypt (ffi-8.dll) et à SSL/compression ---
-# Ces DLL viennent de l'installation Anaconda de base et ne sont pas toujours
-# détectées automatiquement par PyInstaller. Ajustez ce chemin si le projet
-# est buildé sur une autre machine ou avec une autre installation Anaconda.
-ANACONDA_LIB_BIN = r"C:\Users\hp\anaconda3\Library\bin"
+# Ces DLL viennent de l'installation Python de base (Anaconda, Miniconda ou python.org)
+# utilisée pour créer le venv, et ne sont pas toujours détectées automatiquement par
+# PyInstaller. sys.base_prefix pointe dynamiquement vers cette installation de base (et
+# non vers le dossier du venv lui-même) : ce chemin reste donc valide quelle que soit la
+# machine de build, contrairement à un chemin absolu codé en dur (ex.
+# "C:\Users\<utilisateur>\anaconda3\..."), qui casse silencieusement le build dès qu'on
+# change de machine ou de nom d'utilisateur Windows.
+DOSSIERS_DLL_CANDIDATS = [
+    os.path.join(sys.base_prefix, "Library", "bin"),  # disposition Anaconda/Miniconda
+    os.path.join(sys.base_prefix, "DLLs"),             # disposition python.org standard
+    sys.base_prefix,
+]
 
 dlls_requises = [
     "ffi-8.dll",
@@ -29,9 +38,15 @@ dlls_requises = [
 
 binaries_supplementaires = []
 for nom_dll in dlls_requises:
-    chemin = os.path.join(ANACONDA_LIB_BIN, nom_dll)
-    if os.path.exists(chemin):
-        binaries_supplementaires.append((chemin, "."))
+    for dossier in DOSSIERS_DLL_CANDIDATS:
+        chemin = os.path.join(dossier, nom_dll)
+        if os.path.exists(chemin):
+            binaries_supplementaires.append((chemin, "."))
+            break
+    else:
+        print(f"[ORMVAG-Meteo.spec] ATTENTION : {nom_dll} introuvable "
+              f"(cherché dans {DOSSIERS_DLL_CANDIDATS}) — l'exe risque de "
+              f"planter au démarrage si cette DLL est réellement requise.")
 
 # --- Modules non utilisés par l'application, exclus pour réduire la taille du build ---
 modules_exclus = [

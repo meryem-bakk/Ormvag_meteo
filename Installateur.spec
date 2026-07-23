@@ -6,21 +6,35 @@
 # Usage : pyinstaller Installateur.spec
 
 import os
+import sys
 
 block_cipher = None
 
-# Memes DLL systeme que ORMVAG-Meteo.spec (voir ce fichier pour le detail) :
-# necessaires a _ctypes/bcrypt (ffi-8.dll) et non toujours detectees par PyInstaller.
-ANACONDA_LIB_BIN = r"C:\Users\hp\anaconda3\Library\bin"
+# Memes DLL systeme que ORMVAG-Meteo.spec (voir ce fichier pour le detail) : necessaires
+# a _ctypes/bcrypt (ffi-8.dll), non toujours detectees par PyInstaller. sys.base_prefix
+# pointe dynamiquement vers l'installation Python de base (Anaconda/Miniconda/python.org)
+# ayant servi a creer le venv, donc reste valide quelle que soit la machine de build -
+# contrairement a un chemin absolu code en dur.
+DOSSIERS_DLL_CANDIDATS = [
+    os.path.join(sys.base_prefix, "Library", "bin"),  # disposition Anaconda/Miniconda
+    os.path.join(sys.base_prefix, "DLLs"),             # disposition python.org standard
+    sys.base_prefix,
+]
 dlls_requises = [
     "ffi-8.dll", "libssl-3-x64.dll", "libcrypto-3-x64.dll",
     "liblzma.dll", "libbz2.dll", "sqlite3.dll", "libexpat.dll",
 ]
-binaries_supplementaires = [
-    (os.path.join(ANACONDA_LIB_BIN, nom), ".")
-    for nom in dlls_requises
-    if os.path.exists(os.path.join(ANACONDA_LIB_BIN, nom))
-]
+binaries_supplementaires = []
+for nom_dll in dlls_requises:
+    for dossier in DOSSIERS_DLL_CANDIDATS:
+        chemin = os.path.join(dossier, nom_dll)
+        if os.path.exists(chemin):
+            binaries_supplementaires.append((chemin, "."))
+            break
+    else:
+        print(f"[Installateur.spec] ATTENTION : {nom_dll} introuvable "
+              f"(cherché dans {DOSSIERS_DLL_CANDIDATS}) — l'exe risque de "
+              f"planter au démarrage si cette DLL est réellement requise.")
 
 a = Analysis(
     ["installateur/installer.py"],
