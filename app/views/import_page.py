@@ -25,12 +25,12 @@ class ImportPage(QWidget):
         layout.addWidget(titre)
 
         # --- Tâche complète (import + indicateurs) ---
-        bloc_titre_tache, _ = titre_section("Tâche quotidienne complète (normalement automatique à 6h00)")
+        bloc_titre_tache, _ = titre_section("Tâche quotidienne complète (normalement automatique à 8h00)")
         layout.addLayout(bloc_titre_tache)
 
         description_tache = QLabel(
             "Exécute manuellement l'import + le calcul des indicateurs, puis rafraîchit toutes "
-            "les pages — utile pour tester sans attendre 6h du matin."
+            "les pages — utile pour tester sans attendre 8h du matin."
         )
         description_tache.setStyleSheet(
             f"color: {COULEURS['neutre']}; font-size: 12px; border: none; background: transparent;"

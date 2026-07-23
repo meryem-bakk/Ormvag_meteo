@@ -13,8 +13,8 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 - **Détection d'anomalies (IA)** : en complément des règles de plausibilité physique, un modèle Isolation Forest signale les journées statistiquement atypiques (page **Indicateurs**).
 - **Carte** : localisation des stations avec statut visuel (OK / déficit / alerte).
 - **Gestion des utilisateurs et rôles** : authentification, contrôle d'accès, et historique des modifications (création/modification de compte, changement de rôle, réinitialisation de mot de passe).
-- **Sauvegarde** : sauvegarde manuelle depuis l'interface, et sauvegarde automatique planifiée chaque jour à 6h00.
-- **Tâche planifiée quotidienne (6h00)** : import des dernières mesures, recalcul des indicateurs, génération et envoi par email du rapport journalier, sauvegarde de la base (voir sections dédiées ci-dessous).
+- **Sauvegarde** : sauvegarde manuelle depuis l'interface, et sauvegarde automatique planifiée chaque jour à 8h00.
+- **Tâche planifiée quotidienne (8h00)** : import des dernières mesures, recalcul des indicateurs, génération et envoi par email du rapport journalier, sauvegarde de la base (voir sections dédiées ci-dessous).
 
 ## Stack technique
 
@@ -23,7 +23,7 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 - **Graphiques** : Matplotlib
 - **Cartographie** : Leaflet.js (affiché via `QWebEngineView`)
 - **Authentification** : bcrypt pour le hachage des mots de passe
-- **Planification** : APScheduler (tâche quotidienne à 6h00)
+- **Planification** : APScheduler (tâche quotidienne à 8h00)
 - **Machine Learning** : scikit-learn (détection d'anomalies Isolation Forest, intégrée à l'app) ; TensorFlow/Keras (prévisions LSTM, étude ponctuelle — voir [Module Machine Learning](#module-machine-learning-ml))
 
 ## Structure du projet
@@ -120,16 +120,16 @@ Voir `.env.example` pour la liste complète. Principales variables :
 | `SMTP_DESTINATAIRES` | Adresse(s) recevant les rapports, séparées par des virgules. Modifiable aussi depuis l'interface (page Paramètres). |
 | `PG_DUMP_PATH` | (optionnel) Chemin vers `pg_dump.exe`, utilisé pour la sauvegarde de la base. Si absent, recherché automatiquement dans `C:\Program Files\PostgreSQL\<version>\bin\` (Windows). |
 
-## Tâche planifiée quotidienne (6h00)
+## Tâche planifiée quotidienne (8h00, pour le cycle 6h-6h)
 
-Une tâche planifiée (`APScheduler`, `app/services/scheduler.py`) s'exécute chaque jour à **6h00** et enchaîne, chacune indépendamment des autres (une erreur sur l'une n'empêche pas les suivantes) :
+Une tâche planifiée (`APScheduler`, `app/services/scheduler.py`) s'exécute chaque jour à **8h00** et enchaîne, chacune indépendamment des autres (une erreur sur l'une n'empêche pas les suivantes) :
 
 1. **Import automatique** des dernières mesures des stations.
 2. **Recalcul des indicateurs** agroclimatiques journaliers (uniquement les ~45 derniers jours ; les indicateurs plus anciens sont stables et ne sont pas retraités).
-3. **Relevé des précipitations** : génération d'un fichier Excel au format officiel SED "RELEVE DES PRECIPITATIONS POUR LA CAMPAGNE AGRICOLE", envoyé par email aux adresses définies dans `SMTP_DESTINATAIRES`. Le fichier est aussi conservé dans `Rapports/`. Un envoi manuel (période, stations et format PDF/Excel/CSV au choix) est disponible depuis la page **Rapports**.
+3. **Relevé des précipitations** : génération d'un fichier Excel au format officiel SED "RELEVE DES PRECIPITATIONS POUR LA CAMPAGNE AGRICOLE", envoyé par email aux adresses définies dans `SMTP_DESTINATAIRES`. Le fichier est aussi conservé dans `Rapports/`. Un envoi manuel (période, stations et format PDF/Excel/CSV au choix) est disponible depuis la page **Rapports**. La pluie des dernières 24h est calée sur le cycle agrométéorologique 6h-6h (convention OMM) et calculée à partir des relevés bruts (pas de 15 min) du site source — la tâche s'exécute à 8h plutôt que pile à 6h pour laisser le temps à ces relevés de remonter (délai de transmission observé d'environ 2h).
 4. **Sauvegarde automatique** de la base (voir section dédiée ci-dessous).
 
-Si l'application reste fermée à 6h00 (absence prolongée), la tâche est rattrapée au prochain démarrage : la fenêtre d'import s'élargit à la taille réelle de l'absence (plafonnée à 14 jours) et **un relevé distinct est généré et envoyé pour chaque jour manqué**, plutôt qu'un seul rapport pour le jour le plus récent.
+Si l'application reste fermée à 8h00 (absence prolongée), la tâche est rattrapée au prochain démarrage : la fenêtre d'import s'élargit à la taille réelle de l'absence (plafonnée à 14 jours) et **un relevé distinct est généré et envoyé pour chaque jour manqué**, plutôt qu'un seul rapport pour le jour le plus récent.
 
 Sans configuration SMTP valide dans `.env`, les autres étapes continuent de fonctionner normalement — seul l'envoi de l'email échoue (erreur journalisée dans la console). Idem pour `pg_dump` absent : seule la sauvegarde échoue.
 
@@ -144,7 +144,7 @@ Reproduit la mise en page et les variables du bulletin utilisé par le SED (Serv
 
 ## Sauvegarde
 
-- **Automatique** : un dump complet de la base (`pg_dump`) est généré chaque jour à 6h00 dans `Sauvegardes/`, au format `sauvegarde_ormvag_AAAAMMJJ_HHMM.sql`. Seules les **14 sauvegardes les plus récentes** sont conservées, les plus anciennes sont supprimées automatiquement (`app/services/sauvegarde.py`).
+- **Automatique** : un dump complet de la base (`pg_dump`) est généré chaque jour à 8h00 dans `Sauvegardes/`, au format `sauvegarde_ormvag_AAAAMMJJ_HHMM.sql`. Seules les **14 sauvegardes les plus récentes** sont conservées, les plus anciennes sont supprimées automatiquement (`app/services/sauvegarde.py`).
 - **Manuelle** : un bouton "Créer une sauvegarde" dans la page **Paramètres** permet de générer un dump à l'emplacement de son choix, à tout moment.
 
 ## Module Machine Learning (`ML/`)

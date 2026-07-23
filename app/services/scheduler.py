@@ -97,8 +97,13 @@ def _envoyer_rapport_pour_jour(jour):
 
 def tache_quotidienne_6h():
     """
-    Exécutée chaque jour à 6h00 — heure de référence agrométéorologique
-    (journée pluviométrique standard : 6h à 6h, convention OMM).
+    Exécutée chaque jour à 8h00 — 2h après la fin du cycle agrométéorologique
+    6h-6h (convention OMM) qu'elle traite. Ce décalage laisse le temps aux relevés
+    bruts du site source de remonter (délai de transmission observé d'environ 2h) :
+    lancer la tâche pile à 6h00 laisserait le calcul de "Pluie 24h" amputé des
+    deux dernières heures du cycle (voir generateur_rapport._pluie_24h). Le nom de
+    la fonction et les libellés ("6h") font référence au cycle traité, pas à
+    l'heure d'exécution réelle.
 
     Si l'application est restée fermée plusieurs jours, rattrape automatiquement
     tous les cycles manqués : import élargi à la taille réelle de l'absence,
@@ -173,7 +178,7 @@ def demarrer_scheduler():
     scheduler.add_job(
         tache_quotidienne_6h,
         trigger="cron",
-        hour=6,
+        hour=8,
         minute=0,
         id="tache_quotidienne_6h"
     )
@@ -183,7 +188,7 @@ def demarrer_scheduler():
 
     if not _tache_deja_executee_aujourdhui():
         print("[Scheduler] Tâche quotidienne pas encore exécutée aujourd'hui "
-              "(app probablement fermée à 6h00) — rattrapage en arrière-plan.")
+              "(app probablement fermée à 8h00) — rattrapage en arrière-plan.")
         scheduler.add_job(tache_quotidienne_6h, id="rattrapage_quotidien")
 
     return scheduler

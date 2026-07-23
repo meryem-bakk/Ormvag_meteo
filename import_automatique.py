@@ -56,14 +56,17 @@ def se_connecter(log=print):
     return session
 
 
-def telecharger_donnees(session, id_station, date_debut, date_fin):
+def telecharger_donnees(session, id_station, date_debut, date_fin, type_data=2):
+    """type_data : 1=Brute (releves au pas de 15 min), 2=Jour (agrege journalier,
+    utilise par l'import quotidien), 3=Hebdomadaire, 4=Mensuel (ces deux derniers
+    renvoient actuellement une erreur serveur cote site source)."""
     session.get(URL_EXPORT_PAGE)
 
     reponse = session.post(
         URL_EXPORT,
         data={
             "stations[]": id_station,
-            "type_data": 2,
+            "type_data": type_data,
             "date_start": date_debut,
             "date_end": date_fin,
         },
@@ -85,6 +88,37 @@ def telecharger_donnees(session, id_station, date_debut, date_fin):
     contenu_fichier = base64.b64decode(partie_base64)
 
     return io.BytesIO(contenu_fichier)
+
+
+def cumul_pluie_brute(session, id_station, debut_dt, fin_dt):
+    """Cumul de pluie (mm) reel entre deux horodatages precis, a partir des releves
+    bruts au pas de 15 minutes (type_data=1). Contrairement a l'agrege journalier
+    (minuit-minuit) utilise par l'import quotidien, permet de calculer une fenetre
+    6h-6h exacte (convention OMM), qui ne correspond a aucune frontiere de jour
+    calendaire et n'est donc pas calculable a partir de l'agrege seul."""
+    fichier = telecharger_donnees(
+        session, id_station,
+        debut_dt.strftime("%Y-%m-%d"), fin_dt.strftime("%Y-%m-%d"),
+        type_data=1,
+    )
+    xls = pd.ExcelFile(fichier)
+    total = 0.0
+    for nom_feuille in xls.sheet_names:
+        if nom_feuille.lower() == "worksheet":
+            continue
+        df = pd.read_excel(xls, sheet_name=nom_feuille, header=None)
+        donnees = df.iloc[4:].copy()
+        donnees.columns = [
+            "col0", "date", "eto", "pluie",
+            "temp", "hum", "rayonnement", "vent", "direction_vent", "type_donnee"
+        ]
+        donnees = donnees[pd.notna(donnees["date"])]
+        if donnees.empty:
+            continue
+        donnees["date"] = pd.to_datetime(donnees["date"], format="%d/%m/%Y %H:%M")
+        fenetre = donnees[(donnees["date"] >= debut_dt) & (donnees["date"] < fin_dt)]
+        total += fenetre["pluie"].astype(float).sum()
+    return total
 
 
 def importer_fichier_en_memoire(fichier_bytes, identifiant_externe, session_db):
