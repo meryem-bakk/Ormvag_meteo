@@ -1,0 +1,95 @@
+====================================================================
+ ORMVAG Météo Manager — Installation sur un nouveau PC
+====================================================================
+
+Contenu de cette clé USB :
+  - Installateur-ORMVAG/   (à lancer une seule fois, en premier)
+  - ORMVAG-Meteo/          (l'application elle-même)
+
+--------------------------------------------------------------------
+ÉTAPE 1 — Copier les deux dossiers sur le PC
+--------------------------------------------------------------------
+Copier "Installateur-ORMVAG" et "ORMVAG-Meteo" depuis la clé USB vers
+un dossier du PC (par exemple le Bureau, ou C:\ORMVAG-Meteo).
+Ne pas lancer les programmes directement depuis la clé USB.
+
+--------------------------------------------------------------------
+ÉTAPE 2 — Lancer l'installateur
+--------------------------------------------------------------------
+Ouvrir le dossier "Installateur-ORMVAG" copié sur le PC, puis double-
+cliquer sur "Installateur-ORMVAG.exe".
+
+Une fenêtre noire (console) s'ouvre et affiche la progression :
+  - Installation de PostgreSQL (2 à 5 minutes, NE PAS FERMER la fenêtre)
+  - Création de la base de données
+  - Création du schéma et des données de base (stations, rôles...)
+
+À LA FIN, la fenêtre affiche un message du type :
+
+    === Installation terminee ===
+    Vous pouvez maintenant lancer ORMVAG-Meteo.exe depuis ce meme dossier.
+    Identifiant : admin | Mot de passe : xxxxxxxxxxxx
+
+NOTER CE MOT DE PASSE (ou faire une capture d'écran) avant de fermer
+la fenêtre — il ne sera plus affiché ensuite.
+
+--------------------------------------------------------------------
+ÉTAPE 3 — Transférer le fichier .env vers le dossier de l'application
+--------------------------------------------------------------------
+L'installateur crée un fichier ".env" DANS SON PROPRE DOSSIER
+("Installateur-ORMVAG\.env"), pas dans celui de l'application. Il faut
+le déplacer manuellement :
+
+  1. Ouvrir le dossier "Installateur-ORMVAG".
+  2. Si le fichier ".env" n'apparaît pas dans la liste : en haut de la
+     fenêtre, cliquer sur "Affichage" > "Afficher" > cocher
+     "Éléments cachés". Il doit alors apparaître (il ressemble à un
+     fichier sans nom, avec juste l'extension ".env" visible). S'il
+     n'apparaît toujours pas, aller dans "Affichage" > "Options" >
+     onglet "Affichage" > décocher "Masquer les extensions des
+     fichiers dont le type est connu".
+  3. Copier ce fichier ".env".
+  4. Le coller dans le dossier "ORMVAG-Meteo", en remplaçant le fichier
+     ".env" qui s'y trouve déjà (confirmer le remplacement).
+
+--------------------------------------------------------------------
+ÉTAPE 4 — Compléter le fichier .env avec les identifiants du service
+--------------------------------------------------------------------
+Ouvrir le fichier ".env" qu'on vient de coller dans "ORMVAG-Meteo"
+avec le Bloc-notes (clic droit > Ouvrir avec > Bloc-notes).
+
+NE PAS TOUCHER à la ligne DATABASE_URL (déjà correcte).
+
+Compléter les lignes suivantes avec exactement ces valeurs :
+
+    SMTP_HOST=smtp.gmail.com
+    SMTP_PORT=587
+    SMTP_USER=***RETIRE***
+    SMTP_PASSWORD=***RETIRE***
+    SMTP_DESTINATAIRES=elbakkourimeryem001@gmail.com
+    ORMVAG_TELEPHONE=***RETIRE***
+    ORMVAG_MOTDEPASSE=***RETIRE***
+
+Enregistrer le fichier (Ctrl+S), puis fermer le Bloc-notes.
+
+--------------------------------------------------------------------
+ÉTAPE 5 — Premier lancement de l'application
+--------------------------------------------------------------------
+Ouvrir le dossier "ORMVAG-Meteo" et double-cliquer sur
+"ORMVAG-Meteo.exe".
+
+Se connecter avec :
+    Identifiant : admin
+    Mot de passe : celui noté à l'étape 2
+
+Changer immédiatement ce mot de passe : Paramètres > Utilisateurs.
+
+--------------------------------------------------------------------
+Remarques
+--------------------------------------------------------------------
+- L'application doit rester ouverte pour que la tâche automatique
+  quotidienne (import, indicateurs, rapport, sauvegarde) s'exécute
+  chaque jour à 8h00. Si le PC/l'app est éteint à ce moment-là, tout
+  est rattrapé automatiquement au prochain démarrage.
+- En cas de problème au lancement, un fichier "erreur.log" est créé
+  à côté de "ORMVAG-Meteo.exe" avec le détail de l'erreur.
