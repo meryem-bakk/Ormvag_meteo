@@ -75,6 +75,10 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # L'installation de PostgreSQL comme service Windows necessite les droits
+    # administrateur ; sans ce manifeste, l'exe echoue silencieusement avec
+    # "l'operation necessite une elevation" au lieu de demander l'elevation via UAC.
+    uac_admin=True,
 )
 
 coll = COLLECT(
