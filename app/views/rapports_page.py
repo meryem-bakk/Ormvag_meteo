@@ -5,13 +5,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate
 import os
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from app.database import SessionLocal
 from app.models.station import Station
 from app.services.generateur_rapport import (
     recuperer_donnees, generer_pdf, generer_excel, generer_csv,
     recuperer_synthese, generer_graphique_temperature, generer_pdf_synthese,
     generer_excel_synthese, generer_csv_synthese,
+    recuperer_releve_precipitations, generer_excel_releve_precipitations,
 )
 from app.services.email_service import envoyer_rapport_par_email
 from app.utils.theme import COULEURS, titre_section, diviseur_vertical
@@ -107,6 +108,32 @@ class RapportsPage(QWidget):
         ligne_dates.addStretch()
         layout_droit.addLayout(ligne_dates)
 
+        # Utilisé uniquement par le type "Relevé journalier" ci-dessous : soit un seul
+        # cycle 6h-6h (jour unique), soit un relevé distinct pour chaque jour de la
+        # période déjà définie ci-dessus (même principe que le rattrapage automatique
+        # du scheduler après une absence prolongée — voir scheduler._envoyer_rapport_pour_jour).
+        ligne_mode_journalier = QHBoxLayout()
+        self.groupe_mode_journalier = QButtonGroup(self)
+        self.radio_jour_unique = QRadioButton("Jour unique :")
+        self.radio_jour_periode = QRadioButton("Un relevé par jour de la période ci-dessus")
+        self.radio_jour_unique.setChecked(True)
+        for radio in [self.radio_jour_unique, self.radio_jour_periode]:
+            radio.setStyleSheet(self._style_radio())
+            radio.setEnabled(False)
+            self.groupe_mode_journalier.addButton(radio)
+            ligne_mode_journalier.addWidget(radio)
+            radio.toggled.connect(self._basculer_type_rapport)
+
+        self.date_jour = QDateEdit(calendarPopup=True)
+        self.date_jour.setDisplayFormat("dd/MM/yyyy")
+        self.date_jour.setDate(QDate.currentDate())
+        self.date_jour.setMinimumWidth(110)
+        self.date_jour.setStyleSheet(style_champ)
+        self.date_jour.setEnabled(False)
+        ligne_mode_journalier.addWidget(self.date_jour)
+        ligne_mode_journalier.addStretch()
+        layout_droit.addLayout(ligne_mode_journalier)
+
         # Raccourcis de période
         ligne_raccourcis = QHBoxLayout()
         for texte, jours in [("7 derniers jours", 7), ("30 derniers jours", 30), ("Ce mois-ci", 30)]:
@@ -130,12 +157,14 @@ class RapportsPage(QWidget):
 
         self.radio_synthese = QRadioButton("Synthèse (indicateurs + graphique)")
         self.radio_detaille = QRadioButton("Détaillé (données brutes jour par jour)")
+        self.radio_journalier = QRadioButton("Relevé journalier (précipitations, format SED)")
         self.radio_synthese.setChecked(True)
 
-        for radio in [self.radio_synthese, self.radio_detaille]:
+        for radio in [self.radio_synthese, self.radio_detaille, self.radio_journalier]:
             radio.setStyleSheet(self._style_radio())
             self.groupe_type.addButton(radio)
             ligne_type.addWidget(radio)
+            radio.toggled.connect(self._basculer_type_rapport)
         ligne_type.addStretch()
         layout_droit.addLayout(ligne_type)
 
@@ -231,12 +260,41 @@ class RapportsPage(QWidget):
         self.date_debut.setDate(QDate.currentDate().addDays(-jours))
         self.date_fin.setDate(QDate.currentDate())
 
+    def _basculer_type_rapport(self):
+        """Le relevé journalier porte sur un cycle 6h-6h (jour unique ou un relevé par
+        jour d'une période), toutes stations actives confondues, et n'existe qu'au
+        format Excel (voir generateur_rapport.generer_excel_releve_precipitations) :
+        les contrôles qui ne s'appliquent pas à ce type sont désactivés plutôt que
+        masqués, pour que leur absence d'effet reste visible."""
+        est_journalier = self.radio_journalier.isChecked()
+        est_jour_unique = est_journalier and self.radio_jour_unique.isChecked()
+        est_journalier_periode = est_journalier and self.radio_jour_periode.isChecked()
+
+        self.radio_jour_unique.setEnabled(est_journalier)
+        self.radio_jour_periode.setEnabled(est_journalier)
+        self.date_jour.setEnabled(est_jour_unique)
+        self.date_debut.setEnabled((not est_journalier) or est_journalier_periode)
+        self.date_fin.setEnabled((not est_journalier) or est_journalier_periode)
+
+        self.case_toutes.setEnabled(not est_journalier)
+        for case in self.cases_stations.values():
+            case.setEnabled((not est_journalier) and (not self.case_toutes.isChecked()))
+
+        self.radio_pdf.setEnabled(not est_journalier)
+        self.radio_csv.setEnabled(not est_journalier)
+        if est_journalier:
+            self.radio_excel.setChecked(True)
+
     def _stations_selectionnees(self):
         if self.case_toutes.isChecked():
             return None  # None = toutes
         return [sid for sid, case in self.cases_stations.items() if case.isChecked()]
 
     def _generer(self):
+        if self.radio_journalier.isChecked():
+            self._generer_journalier()
+            return
+
         station_ids = self._stations_selectionnees()
         date_debut = datetime.combine(self.date_debut.date().toPython(), datetime.min.time())
         date_fin = datetime.combine(self.date_fin.date().toPython(), datetime.max.time())
@@ -292,7 +350,202 @@ class RapportsPage(QWidget):
             self.label_statut.setText("")
             QMessageBox.critical(self, "Erreur", f"Impossible de générer le rapport :\n{e}")
 
+    def _generer_journalier(self):
+        if self.radio_jour_periode.isChecked():
+            self._generer_journalier_periode()
+        else:
+            self._generer_journalier_jour_unique()
+
+    def _generer_journalier_jour_unique(self):
+        date_fin_cycle = datetime.combine(self.date_jour.date().toPython(), time(6, 0))
+        nom_defaut = f"rapport_journalier_{date_fin_cycle.strftime('%Y%m%d')}.xlsx"
+        chemin, _ = QFileDialog.getSaveFileName(
+            self, "Enregistrer le relevé journalier", nom_defaut, "Fichier Excel (*.xlsx)")
+        if not chemin:
+            return
+
+        self.label_statut.setText("Génération du relevé journalier...")
+        try:
+            df, infos, tableau_mensuel = recuperer_releve_precipitations(date_fin=date_fin_cycle)
+            if df.empty:
+                QMessageBox.information(self, "Aucune donnée", "Aucune mesure trouvée pour ce jour.")
+                self.label_statut.setText("")
+                return
+
+            generer_excel_releve_precipitations(chemin, df, infos, tableau_mensuel)
+            self.label_statut.setText(f"Relevé généré : {chemin}")
+            QMessageBox.information(self, "Rapport généré", f"Le relevé a été enregistré :\n{chemin}")
+        except Exception as e:
+            self.label_statut.setText("")
+            QMessageBox.critical(self, "Erreur", f"Impossible de générer le relevé :\n{e}")
+
+    def _confirmer_periode_journaliere(self, jour_debut, jour_fin, verbe):
+        """Un relevé par jour interroge le site source en direct (pluie 24h précise,
+        voir generateur_rapport._pluie_24h) : au-delà d'un mois, le nombre d'allers-retours
+        réseau (14 stations x N jours) devient long — on prévient avant de lancer."""
+        if jour_debut > jour_fin:
+            QMessageBox.warning(self, "Période invalide", "La date de début doit précéder la date de fin.")
+            return False
+
+        nb_jours = (jour_fin - jour_debut).days + 1
+        if nb_jours > 31:
+            reponse = QMessageBox.question(
+                self, "Période longue",
+                f"{nb_jours} jours sélectionnés : chaque jour interroge le site source pour "
+                f"les 14 stations, cela peut prendre plusieurs minutes.\nContinuer à {verbe} ?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reponse != QMessageBox.Yes:
+                return False
+        return True
+
+    def _generer_journalier_periode(self):
+        jour_debut = self.date_debut.date().toPython()
+        jour_fin = self.date_fin.date().toPython()
+        if not self._confirmer_periode_journaliere(jour_debut, jour_fin, "générer"):
+            return
+
+        dossier = QFileDialog.getExistingDirectory(self, "Choisir le dossier de destination")
+        if not dossier:
+            return
+
+        self.label_statut.setText("Génération des relevés journaliers...")
+        nb_generes = 0
+        erreurs = []
+        jour = jour_debut
+        while jour <= jour_fin:
+            date_fin_cycle = datetime.combine(jour, time(6, 0))
+            try:
+                df, infos, tableau_mensuel = recuperer_releve_precipitations(date_fin=date_fin_cycle)
+                if not df.empty:
+                    chemin = os.path.join(dossier, f"rapport_journalier_{jour.strftime('%Y%m%d')}.xlsx")
+                    generer_excel_releve_precipitations(chemin, df, infos, tableau_mensuel)
+                    nb_generes += 1
+            except Exception as e:
+                erreurs.append(f"{jour.strftime('%d/%m/%Y')} : {e}")
+            jour += timedelta(days=1)
+
+        message = f"{nb_generes} relevé(s) généré(s) dans :\n{dossier}"
+        if erreurs:
+            message += "\n\nErreurs :\n" + "\n".join(erreurs)
+        self.label_statut.setText(f"{nb_generes} relevé(s) généré(s) dans {dossier}")
+        QMessageBox.information(self, "Rapports générés", message)
+
+    def _envoyer_journalier_par_email(self):
+        if self.radio_jour_periode.isChecked():
+            self._envoyer_journalier_periode_par_email()
+        else:
+            self._envoyer_journalier_jour_unique_par_email()
+
+    def _envoyer_journalier_jour_unique_par_email(self):
+        destinataires = os.getenv("SMTP_DESTINATAIRES", "").strip()
+        if not destinataires:
+            QMessageBox.warning(
+                self, "Configuration manquante",
+                "Aucun destinataire configuré.\nRenseignez SMTP_DESTINATAIRES dans le fichier .env."
+            )
+            return
+
+        date_fin_cycle = datetime.combine(self.date_jour.date().toPython(), time(6, 0))
+        reponse = QMessageBox.question(
+            self, "Confirmer l'envoi",
+            f"Envoyer le relevé journalier du {date_fin_cycle.strftime('%d/%m/%Y')} par email à :\n{destinataires} ?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reponse != QMessageBox.Yes:
+            return
+
+        os.makedirs("Rapports", exist_ok=True)
+        chemin = os.path.join("Rapports", f"rapport_journalier_{date_fin_cycle.strftime('%Y%m%d')}.xlsx")
+
+        self.label_statut.setText("Génération et envoi du relevé journalier...")
+        try:
+            df, infos, tableau_mensuel = recuperer_releve_precipitations(date_fin=date_fin_cycle)
+            if df.empty:
+                QMessageBox.information(self, "Aucune donnée", "Aucune mesure trouvée pour ce jour.")
+                self.label_statut.setText("")
+                return
+
+            generer_excel_releve_precipitations(chemin, df, infos, tableau_mensuel)
+
+            envoyer_rapport_par_email(
+                chemin,
+                sujet=f"ORMVAG — Relevé des précipitations du {date_fin_cycle.strftime('%d/%m/%Y')} "
+                      f"(campagne {infos['libelle_campagne']})",
+                corps=(
+                    "Bonjour,\n\nVeuillez trouver ci-joint le relevé des précipitations du réseau ORMVAG "
+                    "(pluie 24h, 15 derniers jours, cumuls de campagne par station et par province).\n\n"
+                    "Cordialement,\nORMVAG — Système météo automatisé"
+                ),
+            )
+            self.label_statut.setText(f"Relevé envoyé par email : {chemin}")
+            QMessageBox.information(self, "Email envoyé", f"Le relevé a été envoyé par email à :\n{destinataires}")
+        except Exception as e:
+            self.label_statut.setText("")
+            QMessageBox.critical(self, "Erreur", f"Impossible d'envoyer le relevé par email :\n{e}")
+
+    def _envoyer_journalier_periode_par_email(self):
+        destinataires = os.getenv("SMTP_DESTINATAIRES", "").strip()
+        if not destinataires:
+            QMessageBox.warning(
+                self, "Configuration manquante",
+                "Aucun destinataire configuré.\nRenseignez SMTP_DESTINATAIRES dans le fichier .env."
+            )
+            return
+
+        jour_debut = self.date_debut.date().toPython()
+        jour_fin = self.date_fin.date().toPython()
+        if not self._confirmer_periode_journaliere(jour_debut, jour_fin, "envoyer"):
+            return
+
+        nb_jours = (jour_fin - jour_debut).days + 1
+        reponse = QMessageBox.question(
+            self, "Confirmer l'envoi",
+            f"Envoyer {nb_jours} relevé(s) journalier(s) distinct(s) (un email par jour) du "
+            f"{jour_debut.strftime('%d/%m/%Y')} au {jour_fin.strftime('%d/%m/%Y')} à :\n{destinataires} ?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reponse != QMessageBox.Yes:
+            return
+
+        os.makedirs("Rapports", exist_ok=True)
+        self.label_statut.setText("Génération et envoi des relevés journaliers...")
+        nb_envoyes = 0
+        erreurs = []
+        jour = jour_debut
+        while jour <= jour_fin:
+            date_fin_cycle = datetime.combine(jour, time(6, 0))
+            try:
+                df, infos, tableau_mensuel = recuperer_releve_precipitations(date_fin=date_fin_cycle)
+                if not df.empty:
+                    chemin = os.path.join("Rapports", f"rapport_journalier_{jour.strftime('%Y%m%d')}.xlsx")
+                    generer_excel_releve_precipitations(chemin, df, infos, tableau_mensuel)
+                    envoyer_rapport_par_email(
+                        chemin,
+                        sujet=f"ORMVAG — Relevé des précipitations du {jour.strftime('%d/%m/%Y')} "
+                              f"(campagne {infos['libelle_campagne']})",
+                        corps=(
+                            "Bonjour,\n\nVeuillez trouver ci-joint le relevé des précipitations du réseau "
+                            "ORMVAG (pluie 24h, 15 derniers jours, cumuls de campagne par station et par "
+                            "province).\n\nCordialement,\nORMVAG — Système météo automatisé"
+                        ),
+                    )
+                    nb_envoyes += 1
+            except Exception as e:
+                erreurs.append(f"{jour.strftime('%d/%m/%Y')} : {e}")
+            jour += timedelta(days=1)
+
+        message = f"{nb_envoyes} relevé(s) envoyé(s) par email à :\n{destinataires}"
+        if erreurs:
+            message += "\n\nErreurs :\n" + "\n".join(erreurs)
+        self.label_statut.setText(f"{nb_envoyes} relevé(s) envoyé(s).")
+        QMessageBox.information(self, "Emails envoyés", message)
+
     def _envoyer_par_email(self):
+        if self.radio_journalier.isChecked():
+            self._envoyer_journalier_par_email()
+            return
+
         destinataires = os.getenv("SMTP_DESTINATAIRES", "").strip()
         if not destinataires:
             QMessageBox.warning(
