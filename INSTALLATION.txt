@@ -60,15 +60,10 @@ avec le Bloc-notes (clic droit > Ouvrir avec > Bloc-notes).
 
 NE PAS TOUCHER à la ligne DATABASE_URL (déjà correcte).
 
-Compléter les lignes suivantes avec exactement ces valeurs :
-
-    SMTP_HOST=smtp.gmail.com
-    SMTP_PORT=587
-    SMTP_USER=***RETIRE***
-    SMTP_PASSWORD=***RETIRE***
-    SMTP_DESTINATAIRES=elbakkourimeryem001@gmail.com
-    ORMVAG_TELEPHONE=***RETIRE***
-    ORMVAG_MOTDEPASSE=***RETIRE***
+Compléter les lignes SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD /
+SMTP_DESTINATAIRES / ORMVAG_TELEPHONE / ORMVAG_MOTDEPASSE en recopiant
+les valeurs du fichier .env de référence (transmis séparément, JAMAIS
+par ce document ni par un dépôt Git — ce sont des identifiants réels).
 
 Enregistrer le fichier (Ctrl+S), puis fermer le Bloc-notes.
 
