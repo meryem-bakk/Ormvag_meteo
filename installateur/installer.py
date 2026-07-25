@@ -97,7 +97,7 @@ def ecrire_env(mot_de_passe_postgres):
         return
 
     contenu = (
-        f"DATABASE_URL=postgresql://postgres:{mot_de_passe_postgres}@localhost:{PORT}/{NOM_BASE}\n"
+        f"DATABASE_URL=postgresql+psycopg://postgres:{mot_de_passe_postgres}@localhost:{PORT}/{NOM_BASE}\n"
         "ADMIN_SEED_PASSWORD=\n"
         "SMTP_HOST=smtp.gmail.com\n"
         "SMTP_PORT=587\n"

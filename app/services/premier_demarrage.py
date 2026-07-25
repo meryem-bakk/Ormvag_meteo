@@ -88,7 +88,7 @@ def _creer_stations(session, log):
                 code = f"REAL-{i:02d}"
             session.add(Station(
                 nom=nom, code=code, latitude=latitude, longitude=longitude,
-                altitude=0, actif=True, identifiant_externe=identifiant, province=province,
+                actif=True, identifiant_externe=identifiant, province=province,
             ))
             nb_crees += 1
     session.commit()
