@@ -121,7 +121,6 @@ class RapportsPage(QWidget):
             radio.setStyleSheet(self._style_radio())
             radio.setEnabled(False)
             self.groupe_mode_journalier.addButton(radio)
-            ligne_mode_journalier.addWidget(radio)
             radio.toggled.connect(self._basculer_type_rapport)
 
         self.date_jour = QDateEdit(calendarPopup=True)
@@ -130,7 +129,13 @@ class RapportsPage(QWidget):
         self.date_jour.setMinimumWidth(110)
         self.date_jour.setStyleSheet(style_champ)
         self.date_jour.setEnabled(False)
+
+        # Le champ date suit directement "Jour unique" (le radio auquel il se
+        # rapporte), plutot que d'etre relegue en bout de ligne apres le second
+        # radio - l'ordre des addWidget() determine l'ordre visuel gauche->droite.
+        ligne_mode_journalier.addWidget(self.radio_jour_unique)
         ligne_mode_journalier.addWidget(self.date_jour)
+        ligne_mode_journalier.addWidget(self.radio_jour_periode)
         ligne_mode_journalier.addStretch()
         layout_droit.addLayout(ligne_mode_journalier)
 
