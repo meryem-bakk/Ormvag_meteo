@@ -107,10 +107,6 @@ class LoginWindow(QWidget):
         self.champ_mdp.setStyleSheet(self._style_champ())
         layout_carte.addWidget(self.champ_mdp)
 
-        self.case_souvenir = QCheckBox("Se souvenir de moi")
-        self.case_souvenir.setStyleSheet("color: #2c3e50; margin-top: 4px;")
-        layout_carte.addWidget(self.case_souvenir)
-
         self.label_erreur = QLabel("")
         self.label_erreur.setStyleSheet("color: #c0392b; font-size: 12px;")
         self.label_erreur.setWordWrap(True)
