@@ -141,7 +141,7 @@ class DonneesPage(QWidget):
             QCalendarWidget QMenu { background-color: white; color: #2c3e50; }
             QCalendarWidget QSpinBox { color: #2c3e50; background-color: white; }
             QCalendarWidget QAbstractItemView { background-color: white; color: #2c3e50; selection-background-color: #1a5276; selection-color: white; }
-            QCalendarWidget QWidget#qt_calendar_navigationbar { background-color: #ecf0f1; }
+            QCalendarWidget QWidget#qt_calendar_navigationbar { background-color: rgba(215, 215, 215, 255); }
             QCalendarWidget QHeaderView::section { background-color: #1a5276; color: white; padding: 4px; font-weight: bold; border: none; }
         """
 

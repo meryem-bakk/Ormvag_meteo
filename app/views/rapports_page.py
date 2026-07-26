@@ -83,61 +83,62 @@ class RapportsPage(QWidget):
         label_periode.setStyleSheet(f"font-weight: bold; color: {COULEURS['texte']};")
         layout_droit.addWidget(label_periode)
 
-        ligne_dates = QHBoxLayout()
         style_champ = (
             f"QDateEdit {{ color: {COULEURS['texte']}; background-color: white; "
             f"border: 1px solid #ccc; border-radius: 6px; padding: 6px; }}"
         )
+        # Choix valable pour tous les types de rapport (Synthèse/Détaillé/Relevé
+        # journalier) : soit une période (Du/au), soit un jour unique - jamais les
+        # deux en même temps, d'où les radios plutôt que deux champs indépendants.
+        self.groupe_mode_date = QButtonGroup(self)
+        self.radio_mode_periode = QRadioButton("Période :")
+        self.radio_mode_jour = QRadioButton("Jour unique :")
+        self.radio_mode_periode.setChecked(True)
+        for radio in [self.radio_mode_periode, self.radio_mode_jour]:
+            radio.setStyleSheet(self._style_radio())
+            self.groupe_mode_date.addButton(radio)
+            radio.toggled.connect(self._basculer_mode_date)
 
-        ligne_dates.addWidget(QLabel("Du :"))
+        ligne_dates = QHBoxLayout()
+        ligne_dates.addWidget(self.radio_mode_periode)
+
+        label_du = QLabel("Du :")
+        label_du.setStyleSheet("color: black;")
+        ligne_dates.addWidget(label_du)
         self.date_debut = QDateEdit(calendarPopup=True)
         self.date_debut.setDisplayFormat("dd/MM/yyyy")
         self.date_debut.setDate(QDate.currentDate().addMonths(-1))
         self.date_debut.setMinimumWidth(110)
         self.date_debut.setStyleSheet(style_champ)
+        self._appliquer_style_calendrier(self.date_debut)
         ligne_dates.addWidget(self.date_debut)
 
-        ligne_dates.addWidget(QLabel("au :"))
+        label_au = QLabel("au :")
+        label_au.setStyleSheet("color: black;")
+        ligne_dates.addWidget(label_au)
         self.date_fin = QDateEdit(calendarPopup=True)
         self.date_fin.setDisplayFormat("dd/MM/yyyy")
         self.date_fin.setDate(QDate.currentDate())
         self.date_fin.setMinimumWidth(110)
         self.date_fin.setStyleSheet(style_champ)
+        self._appliquer_style_calendrier(self.date_fin)
         ligne_dates.addWidget(self.date_fin)
 
         ligne_dates.addStretch()
         layout_droit.addLayout(ligne_dates)
 
-        # Utilisé uniquement par le type "Relevé journalier" ci-dessous : soit un seul
-        # cycle 6h-6h (jour unique), soit un relevé distinct pour chaque jour de la
-        # période déjà définie ci-dessus (même principe que le rattrapage automatique
-        # du scheduler après une absence prolongée — voir scheduler._envoyer_rapport_pour_jour).
-        ligne_mode_journalier = QHBoxLayout()
-        self.groupe_mode_journalier = QButtonGroup(self)
-        self.radio_jour_unique = QRadioButton("Jour unique :")
-        self.radio_jour_periode = QRadioButton("Un relevé par jour de la période ci-dessus")
-        self.radio_jour_unique.setChecked(True)
-        for radio in [self.radio_jour_unique, self.radio_jour_periode]:
-            radio.setStyleSheet(self._style_radio())
-            radio.setEnabled(False)
-            self.groupe_mode_journalier.addButton(radio)
-            radio.toggled.connect(self._basculer_type_rapport)
-
+        ligne_jour = QHBoxLayout()
+        ligne_jour.addWidget(self.radio_mode_jour)
         self.date_jour = QDateEdit(calendarPopup=True)
         self.date_jour.setDisplayFormat("dd/MM/yyyy")
         self.date_jour.setDate(QDate.currentDate())
         self.date_jour.setMinimumWidth(110)
         self.date_jour.setStyleSheet(style_champ)
+        self._appliquer_style_calendrier(self.date_jour)
         self.date_jour.setEnabled(False)
-
-        # Le champ date suit directement "Jour unique" (le radio auquel il se
-        # rapporte), plutot que d'etre relegue en bout de ligne apres le second
-        # radio - l'ordre des addWidget() determine l'ordre visuel gauche->droite.
-        ligne_mode_journalier.addWidget(self.radio_jour_unique)
-        ligne_mode_journalier.addWidget(self.date_jour)
-        ligne_mode_journalier.addWidget(self.radio_jour_periode)
-        ligne_mode_journalier.addStretch()
-        layout_droit.addLayout(ligne_mode_journalier)
+        ligne_jour.addWidget(self.date_jour)
+        ligne_jour.addStretch()
+        layout_droit.addLayout(ligne_jour)
 
         # Raccourcis de période
         ligne_raccourcis = QHBoxLayout()
@@ -241,6 +242,26 @@ class RapportsPage(QWidget):
             }}
         """
 
+    def _style_calendrier(self):
+        return """
+            QCalendarWidget { background-color: white; min-width: 320px; min-height: 240px; }
+            QCalendarWidget QToolButton { color: #2c3e50; background-color: white; font-weight: bold; }
+            QCalendarWidget QMenu { background-color: white; color: #2c3e50; }
+            QCalendarWidget QSpinBox { color: #2c3e50; background-color: white; }
+            QCalendarWidget QAbstractItemView { background-color: white; color: #2c3e50; selection-background-color: rgba(215, 215, 215, 255); selection-color: #2c3e50; }
+            QCalendarWidget QWidget#qt_calendar_navigationbar { background-color: rgba(215, 215, 215, 255); }
+            QCalendarWidget QHeaderView::section { background-color: rgba(215, 215, 215, 255); color: #2c3e50; padding: 4px; font-weight: bold; border: none; }
+        """
+
+    def _appliquer_style_calendrier(self, champ_date):
+        """Applique le style clair au calendrier d'un QDateEdit. En-tête des jours en
+        gris avec texte foncé plutôt que fond bleu marine avec texte blanc : sur
+        certains postes (thème sombre Windows), le blanc forcé par CSS restait
+        illisible (repris par la palette système) - le texte foncé, lui, s'affiche
+        correctement quel que soit le thème."""
+        calendrier = champ_date.calendarWidget()
+        calendrier.setStyleSheet(self._style_calendrier())
+
     def _charger_stations(self):
         session = SessionLocal()
         stations = session.query(Station).filter_by(actif=True).order_by(Station.nom).all()
@@ -262,24 +283,24 @@ class RapportsPage(QWidget):
             case.setEnabled(actif)
 
     def _appliquer_raccourci(self, jours):
+        self.radio_mode_periode.setChecked(True)
         self.date_debut.setDate(QDate.currentDate().addDays(-jours))
         self.date_fin.setDate(QDate.currentDate())
 
+    def _basculer_mode_date(self):
+        """Période et Jour unique s'excluent mutuellement, quel que soit le type de
+        rapport choisi : jamais les deux jeux de champs actifs en même temps."""
+        est_jour = self.radio_mode_jour.isChecked()
+        self.date_debut.setEnabled(not est_jour)
+        self.date_fin.setEnabled(not est_jour)
+        self.date_jour.setEnabled(est_jour)
+
     def _basculer_type_rapport(self):
-        """Le relevé journalier porte sur un cycle 6h-6h (jour unique ou un relevé par
-        jour d'une période), toutes stations actives confondues, et n'existe qu'au
-        format Excel (voir generateur_rapport.generer_excel_releve_precipitations) :
+        """Le relevé journalier ne concerne que toutes les stations actives et n'existe
+        qu'au format Excel (voir generateur_rapport.generer_excel_releve_precipitations) :
         les contrôles qui ne s'appliquent pas à ce type sont désactivés plutôt que
         masqués, pour que leur absence d'effet reste visible."""
         est_journalier = self.radio_journalier.isChecked()
-        est_jour_unique = est_journalier and self.radio_jour_unique.isChecked()
-        est_journalier_periode = est_journalier and self.radio_jour_periode.isChecked()
-
-        self.radio_jour_unique.setEnabled(est_journalier)
-        self.radio_jour_periode.setEnabled(est_journalier)
-        self.date_jour.setEnabled(est_jour_unique)
-        self.date_debut.setEnabled((not est_journalier) or est_journalier_periode)
-        self.date_fin.setEnabled((not est_journalier) or est_journalier_periode)
 
         self.case_toutes.setEnabled(not est_journalier)
         for case in self.cases_stations.values():
@@ -295,14 +316,24 @@ class RapportsPage(QWidget):
             return None  # None = toutes
         return [sid for sid, case in self.cases_stations.items() if case.isChecked()]
 
+    def _bornes_periode(self):
+        """(date_debut, date_fin) selon le mode actif : soit la période Du/au, soit
+        un jour unique traité comme une période d'un seul jour."""
+        if self.radio_mode_jour.isChecked():
+            jour = self.date_jour.date().toPython()
+            return (datetime.combine(jour, datetime.min.time()), datetime.combine(jour, datetime.max.time()))
+        return (
+            datetime.combine(self.date_debut.date().toPython(), datetime.min.time()),
+            datetime.combine(self.date_fin.date().toPython(), datetime.max.time()),
+        )
+
     def _generer(self):
         if self.radio_journalier.isChecked():
             self._generer_journalier()
             return
 
         station_ids = self._stations_selectionnees()
-        date_debut = datetime.combine(self.date_debut.date().toPython(), datetime.min.time())
-        date_fin = datetime.combine(self.date_fin.date().toPython(), datetime.max.time())
+        date_debut, date_fin = self._bornes_periode()
 
         if self.radio_pdf.isChecked():
             filtre, extension = "Fichier PDF (*.pdf)", ".pdf"
@@ -356,7 +387,7 @@ class RapportsPage(QWidget):
             QMessageBox.critical(self, "Erreur", f"Impossible de générer le rapport :\n{e}")
 
     def _generer_journalier(self):
-        if self.radio_jour_periode.isChecked():
+        if self.radio_mode_periode.isChecked():
             self._generer_journalier_periode()
         else:
             self._generer_journalier_jour_unique()
@@ -437,7 +468,7 @@ class RapportsPage(QWidget):
         QMessageBox.information(self, "Rapports générés", message)
 
     def _envoyer_journalier_par_email(self):
-        if self.radio_jour_periode.isChecked():
+        if self.radio_mode_periode.isChecked():
             self._envoyer_journalier_periode_par_email()
         else:
             self._envoyer_journalier_jour_unique_par_email()
@@ -575,8 +606,7 @@ class RapportsPage(QWidget):
             return
 
         station_ids = self._stations_selectionnees()
-        date_debut = datetime.combine(self.date_debut.date().toPython(), datetime.min.time())
-        date_fin = datetime.combine(self.date_fin.date().toPython(), datetime.max.time())
+        date_debut, date_fin = self._bornes_periode()
         type_rapport = "synthese" if self.radio_synthese.isChecked() else "detaille"
 
         os.makedirs("Rapports", exist_ok=True)

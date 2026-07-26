@@ -42,6 +42,7 @@ app.setWindowIcon(QIcon(os.path.join(_RACINE_PROJET, "assets", "logo.png")))
 app.setStyleSheet("""
     QWidget { color: #2c3e50; }
     QMessageBox { background-color: white; }
+    QMessageBox QLabel { color: black; }
     QLineEdit, QDoubleSpinBox, QComboBox { color: #2c3e50; background-color: white; }
 """)
 
