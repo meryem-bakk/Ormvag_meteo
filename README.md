@@ -101,11 +101,11 @@ Pour un poste ne disposant pas encore de PostgreSQL, un installateur autonome (`
 ## Construire les exécutables
 
 ```bash
-venv\Scripts\pyinstaller.exe ORMVAG-Meteo.spec --noconfirm
-venv\Scripts\pyinstaller.exe Installateur.spec --noconfirm
+powershell -ExecutionPolicy Bypass -File rebuild_exe.ps1
+powershell -ExecutionPolicy Bypass -File rebuild_installateur.ps1
 ```
 
-Génère respectivement `dist/ORMVAG-Meteo/` et `dist/Installateur-ORMVAG/`. Les deux se distribuent sous forme de dossiers (l'exécutable accompagné de `assets/`, `ML/`, `.env`, etc., et de `bin/` pour l'installateur), à l'image d'une application portable — voir `installateur/installer.py` pour l'URL de téléchargement de l'installeur PostgreSQL embarqué (non versionné, ~370 Mo).
+PyInstaller supprime et recrée entièrement `dist/ORMVAG-Meteo/` et `dist/Installateur-ORMVAG/` à chaque build (mode onedir) : ces deux scripts encapsulent l'appel à `pyinstaller ...spec --noconfirm` en sauvegardant puis restaurant ce qui n'est pas dans les `datas` du `.spec` et serait sinon perdu — `Rapports/`, `Sauvegardes/`, `.env` et le marqueur de tâche quotidienne pour le premier, le programme d'installation PostgreSQL embarqué (`installateur/bin/`, non versionné, ~370 Mo — voir `installateur/installer.py` pour l'URL de téléchargement) pour le second. Les deux se distribuent sous forme de dossiers (l'exécutable accompagné de `assets/`, `ML/`, `.env`, etc.), à l'image d'une application portable.
 
 ## Variables d'environnement
 
@@ -153,7 +153,7 @@ Deux modèles entraînés sur l'historique météo des 14 stations (jusqu'à 10 
 
 | Modèle | Fichier | Rôle |
 |---|---|---|
-| LSTM multi-stations | `ML/modele_lstm.keras` + `ML/parametres_lstm.npz` | Prévoit la pluie et la température du lendemain à partir des 30 derniers jours de mesures. MAE sur jeu de test : ~1,9 mm (pluie), ~1,2°C (température). |
+| LSTM multi-stations | `ML/modele_lstm.keras` + `ML/parametres_lstm.npz` | Prévoit la pluie, la température et l'ETo du lendemain à partir des 30 derniers jours de mesures. MAE sur jeu de test : ~1,9 mm (pluie), ~1,2°C (température), ~0,6 mm (ETo). |
 | Isolation Forest | `ML/detecteur_anomalies.joblib` | Détecte les journées dont la combinaison de variables (température, humidité, pluie, vent...) est statistiquement atypique pour la station. |
 
 Seul l'**Isolation Forest** est intégré à l'application (page **Indicateurs**) : léger à charger, et il évalue les mesures du jour même, donc reste pertinent sans réentraînement fréquent.
