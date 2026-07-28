@@ -8,7 +8,6 @@ from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 import os
 from datetime import datetime, time, timedelta
-from sqlalchemy import func
 from app.database import SessionLocal
 from app.models.station import Station
 from app.models.mesure import Mesure
