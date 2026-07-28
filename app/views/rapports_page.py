@@ -1,13 +1,17 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QDateEdit, QComboBox, QCheckBox, QScrollArea, QFileDialog, QMessageBox,
-    QRadioButton, QButtonGroup
+    QRadioButton, QButtonGroup, QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
+    QApplication, QTabWidget
 )
 from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QColor
 import os
 from datetime import datetime, time, timedelta
+from sqlalchemy import func
 from app.database import SessionLocal
 from app.models.station import Station
+from app.models.mesure import Mesure
 from app.services.generateur_rapport import (
     recuperer_donnees, generer_pdf, generer_excel, generer_csv,
     recuperer_synthese, generer_graphique_temperature, generer_pdf_synthese,
@@ -98,6 +102,7 @@ class RapportsPage(QWidget):
             radio.setStyleSheet(self._style_radio())
             self.groupe_mode_date.addButton(radio)
             radio.toggled.connect(self._basculer_mode_date)
+            radio.toggled.connect(self._mettre_a_jour_apercu)
 
         ligne_dates = QHBoxLayout()
         ligne_dates.addWidget(self.radio_mode_periode)
@@ -111,6 +116,7 @@ class RapportsPage(QWidget):
         self.date_debut.setMinimumWidth(110)
         self.date_debut.setStyleSheet(style_champ)
         self._appliquer_style_calendrier(self.date_debut)
+        self.date_debut.dateChanged.connect(self._mettre_a_jour_apercu)
         ligne_dates.addWidget(self.date_debut)
 
         label_au = QLabel("au :")
@@ -122,6 +128,7 @@ class RapportsPage(QWidget):
         self.date_fin.setMinimumWidth(110)
         self.date_fin.setStyleSheet(style_champ)
         self._appliquer_style_calendrier(self.date_fin)
+        self.date_fin.dateChanged.connect(self._mettre_a_jour_apercu)
         ligne_dates.addWidget(self.date_fin)
 
         ligne_dates.addStretch()
@@ -135,6 +142,7 @@ class RapportsPage(QWidget):
         self.date_jour.setMinimumWidth(110)
         self.date_jour.setStyleSheet(style_champ)
         self._appliquer_style_calendrier(self.date_jour)
+        self.date_jour.dateChanged.connect(self._mettre_a_jour_apercu)
         self.date_jour.setEnabled(False)
         ligne_jour.addWidget(self.date_jour)
         ligne_jour.addStretch()
@@ -142,7 +150,7 @@ class RapportsPage(QWidget):
 
         # Raccourcis de période
         ligne_raccourcis = QHBoxLayout()
-        for texte, jours in [("7 derniers jours", 7), ("30 derniers jours", 30), ("Ce mois-ci", 30)]:
+        for texte, jours in [("7 derniers jours", 7), ("15 derniers jours", 15), ("Ce mois-ci", 30)]:
             bouton = QPushButton(texte)
             bouton.setCursor(Qt.PointingHandCursor)
             bouton.setStyleSheet("""
@@ -171,6 +179,13 @@ class RapportsPage(QWidget):
             self.groupe_type.addButton(radio)
             ligne_type.addWidget(radio)
             radio.toggled.connect(self._basculer_type_rapport)
+            radio.toggled.connect(self._mettre_a_jour_apercu)
+        # Charge l'aperçu automatiquement dès la sélection de ce type (pas besoin
+        # du bouton pour le premier chargement) - un changement de date ensuite
+        # nécessite en revanche un clic explicite, pour ne pas relancer une
+        # requête réseau à chaque frappe (voir _mettre_a_jour_apercu).
+        self.radio_journalier.toggled.connect(
+            lambda coche: self._apercu_journalier() if coche else None)
         ligne_type.addStretch()
         layout_droit.addLayout(ligne_type)
 
@@ -192,6 +207,58 @@ class RapportsPage(QWidget):
             ligne_format.addWidget(radio)
         ligne_format.addStretch()
         layout_droit.addLayout(ligne_format)
+
+        self.label_apercu = QLabel("")
+        self.label_apercu.setWordWrap(True)
+        self.label_apercu.setStyleSheet(f"color: {COULEURS['texte']}; font-size: 12px;")
+        layout_droit.addWidget(self.label_apercu)
+
+        # Aperçu des données brutes (Synthèse/Détaillé uniquement - le relevé
+        # journalier n'agrège pas de lignes Mesure individuelles, voir
+        # _mettre_a_jour_apercu). Limité a quelques lignes : un simple aperçu,
+        # pas un remplacement du rapport complet.
+        self.table_apercu = QTableWidget()
+        self.table_apercu.setColumnCount(5)
+        self.table_apercu.setHorizontalHeaderLabels(
+            ["Station", "Date", "Type", "Pluie (mm)", "Temp. moy (°C)"])
+        self.table_apercu.verticalHeader().setVisible(False)
+        self.table_apercu.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table_apercu.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table_apercu.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_apercu.setMaximumHeight(220)
+        self.table_apercu.setStyleSheet(f"""
+            QTableWidget {{ background-color: white; color: {COULEURS['texte']}; border: 1px solid #e0e4e8; gridline-color: #ecf0f1; }}
+            QTableWidget::item:alternate {{ background-color: #fafbfc; }}
+            QHeaderView::section {{ background-color: #ecf0f1; color: {COULEURS['texte']}; padding: 4px; border: none; font-weight: bold; font-size: 11px; }}
+        """)
+        self.table_apercu.setAlternatingRowColors(True)
+        layout_droit.addWidget(self.table_apercu)
+
+        # Le relevé journalier interroge le site source en direct par station
+        # (voir generateur_rapport._pluie_24h) : contrairement au reste de
+        # l'aperçu, non recalculé a chaque frappe mais seulement sur demande.
+        self.bouton_apercu_journalier = QPushButton("Actualiser l'aperçu (interroge le site source)")
+        self.bouton_apercu_journalier.setCursor(Qt.PointingHandCursor)
+        self.bouton_apercu_journalier.setStyleSheet("""
+            QPushButton { background-color: #ecf0f1; color: #2c3e50; border-radius: 6px; padding: 8px 12px; }
+            QPushButton:hover { background-color: #d5dbdb; }
+        """)
+        self.bouton_apercu_journalier.setVisible(False)
+        self.bouton_apercu_journalier.clicked.connect(self._apercu_journalier)
+        layout_droit.addWidget(self.bouton_apercu_journalier)
+
+        # Un onglet par jour en mode "période" (chaque jour a ses propres valeurs,
+        # un seul tableau ne suffirait pas) - masqué en mode "jour unique", qui
+        # réutilise table_apercu directement.
+        self.tabs_apercu_journalier = QTabWidget()
+        self.tabs_apercu_journalier.setMaximumHeight(220)
+        self.tabs_apercu_journalier.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 1px solid #e0e4e8; }}
+            QTabBar::tab {{ background-color: #ecf0f1; color: {COULEURS['texte']}; padding: 6px 12px; }}
+            QTabBar::tab:selected {{ background-color: {COULEURS['primaire']}; color: white; }}
+        """)
+        self.tabs_apercu_journalier.setVisible(False)
+        layout_droit.addWidget(self.tabs_apercu_journalier)
 
         layout_droit.addStretch()
 
@@ -272,15 +339,88 @@ class RapportsPage(QWidget):
             case.setStyleSheet("color: #2c3e50;")
             case.setChecked(False)
             case.setEnabled(False)  # désactivée tant que "Toutes les stations" est cochée
+            case.stateChanged.connect(self._mettre_a_jour_apercu)
             self.layout_cases.addWidget(case)
             self.cases_stations[station.id] = case
 
         self.layout_cases.addStretch()
+        self._mettre_a_jour_apercu()
 
     def _basculer_toutes_stations(self):
         actif = not self.case_toutes.isChecked()
         for case in self.cases_stations.values():
             case.setEnabled(actif)
+        self._mettre_a_jour_apercu()
+
+    NB_LIGNES_APERCU = 8
+
+    def _mettre_a_jour_apercu(self):
+        """Résumé + aperçu des données qui seraient incluses, mis à jour à chaque
+        changement de filtre - pas de requête réseau ici (voir _pluie_24h) : pour
+        le relevé journalier, on affiche juste le cycle visé plutôt que d'interroger
+        le site source à chaque frappe, beaucoup trop lent pour un simple aperçu ;
+        ce relevé agrège de toute façon des cumuls, pas des lignes Mesure brutes,
+        donc le mini-tableau ne s'y applique pas."""
+        if self.radio_journalier.isChecked():
+            self.table_apercu.setVisible(False)
+            self.tabs_apercu_journalier.setVisible(False)
+            self.bouton_apercu_journalier.setVisible(True)
+            if self.radio_mode_jour.isChecked():
+                jour = self.date_jour.date().toPython()
+                periode_txt = f"cycle 6h-6h se terminant le {jour.strftime('%d/%m/%Y')}"
+            else:
+                debut = self.date_debut.date().toPython()
+                fin = self.date_fin.date().toPython()
+                nb_jours = (fin - debut).days + 1
+                periode_txt = (
+                    f"{nb_jours} relevé(s) distinct(s), un par jour du "
+                    f"{debut.strftime('%d/%m/%Y')} au {fin.strftime('%d/%m/%Y')}"
+                )
+            self.label_apercu.setText(
+                f"Aperçu : relevé officiel SED (Excel), toutes les stations actives, {periode_txt}."
+            )
+            return
+
+        self.bouton_apercu_journalier.setVisible(False)
+        self.tabs_apercu_journalier.setVisible(False)
+        self.table_apercu.setVisible(True)
+        self.table_apercu.setHorizontalHeaderLabels(
+            ["Station", "Date", "Type", "Pluie (mm)", "Temp. moy (°C)"])
+        station_ids = self._stations_selectionnees()
+        date_debut, date_fin = self._bornes_periode()
+        nb_stations = len(self.cases_stations) if station_ids is None else len(station_ids)
+
+        session = SessionLocal()
+        try:
+            base = session.query(Mesure).filter(
+                Mesure.date_heure >= date_debut, Mesure.date_heure <= date_fin,
+            )
+            if station_ids:
+                base = base.filter(Mesure.station_id.in_(station_ids))
+            nb_mesures = base.count()
+            premieres_lignes = base.order_by(Mesure.date_heure.desc()).limit(self.NB_LIGNES_APERCU).all()
+
+            self.table_apercu.setRowCount(len(premieres_lignes))
+            for row, m in enumerate(premieres_lignes):
+                valeurs = [
+                    m.station.nom,
+                    m.date_heure.strftime("%d/%m/%Y"),
+                    m.type_donnee or "—",
+                    f"{m.pluie:.1f}" if m.pluie is not None else "—",
+                    f"{m.temperature:.1f}" if m.temperature is not None else "—",
+                ]
+                for col, valeur in enumerate(valeurs):
+                    item = QTableWidgetItem(valeur)
+                    item.setTextAlignment(Qt.AlignCenter)
+                    self.table_apercu.setItem(row, col, item)
+        finally:
+            session.close()
+
+        self.label_apercu.setText(
+            f"Aperçu : {nb_stations} station(s) sélectionnée(s) · période du "
+            f"{date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')} · "
+            f"{nb_mesures} mesure(s) trouvée(s)"
+            + (f", {self.NB_LIGNES_APERCU} plus récentes ci-dessous :" if nb_mesures else "."))
 
     def _appliquer_raccourci(self, jours):
         self.radio_mode_periode.setChecked(True)
@@ -385,6 +525,157 @@ class RapportsPage(QWidget):
         except Exception as e:
             self.label_statut.setText("")
             QMessageBox.critical(self, "Erreur", f"Impossible de générer le rapport :\n{e}")
+
+    def _lignes_releve(self, df):
+        """Construit les lignes du relevé : une par station, puis une moyenne par
+        province, puis la moyenne ORMVAG globale - pour situer chaque station par
+        rapport à son secteur et au réseau complet. Retourne une liste de
+        (est_moyenne, valeurs) ; est_moyenne sert à distinguer visuellement les
+        lignes de synthèse des lignes de station."""
+        colonnes = ["Pluie 24h (mm)", "Pluie 15 derniers jours (mm)",
+                    "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)"]
+        lignes = []
+        for _, station_ligne in df.iterrows():
+            lignes.append((False, [station_ligne["Station"]] + [f"{station_ligne[c]:.1f}" for c in colonnes]))
+
+        if "Province" in df.columns:
+            for province in sorted(df["Province"].dropna().unique()):
+                sous_ensemble = df[df["Province"] == province]
+                lignes.append((True, [f"Moyenne {province}"] + [f"{sous_ensemble[c].mean():.1f}" for c in colonnes]))
+
+        lignes.append((True, ["Moyenne ORMVAG"] + [f"{df[c].mean():.1f}" for c in colonnes]))
+        return lignes
+
+    def _peupler_table_releve(self, table, df):
+        """Remplit un QTableWidget déjà créé avec les lignes du relevé - factorisé
+        car utilisé aussi bien pour le jour unique (table persistante) que pour
+        chaque onglet du mode période (table créée à la volée)."""
+        lignes = self._lignes_releve(df)
+        table.setRowCount(len(lignes))
+        for row, (est_moyenne, valeurs) in enumerate(lignes):
+            for col, valeur in enumerate(valeurs):
+                item = QTableWidgetItem(str(valeur))
+                item.setTextAlignment(Qt.AlignCenter)
+                if est_moyenne:
+                    police = item.font()
+                    police.setBold(True)
+                    item.setFont(police)
+                    item.setBackground(QColor("#eaf2f8"))
+                table.setItem(row, col, item)
+
+    def _construire_table_releve(self, df):
+        """Construit un QTableWidget peuplé des colonnes du relevé - factorisé car
+        utilisé aussi bien pour le jour unique que pour chaque onglet du mode
+        période."""
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels([
+            "Station", "Pluie 24h (mm)", "Pluie 15j (mm)",
+            "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)",
+        ])
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setAlternatingRowColors(True)
+        table.setStyleSheet(f"""
+            QTableWidget {{ background-color: white; color: {COULEURS['texte']}; border: none; gridline-color: #ecf0f1; }}
+            QTableWidget::item:alternate {{ background-color: #fafbfc; }}
+            QHeaderView::section {{ background-color: #ecf0f1; color: {COULEURS['texte']}; padding: 4px; border: none; font-weight: bold; font-size: 11px; }}
+        """)
+        self._peupler_table_releve(table, df)
+        return table
+
+    def _apercu_journalier(self):
+        """Aperçu du relevé officiel avec les vraies valeurs (Pluie 24h précise,
+        voir generateur_rapport._pluie_24h) : interroge le site source pour les
+        14 stations (× le nombre de jours en mode période), donc assez lent -
+        confirmation demandée avant de lancer, que le déclenchement soit
+        automatique (sélection du type) ou manuel (bouton actualiser)."""
+        mode_jour_unique = self.radio_mode_jour.isChecked()
+        if mode_jour_unique:
+            message = "Charger l'aperçu interroge le site source pour les 14 stations : ça prend quelques secondes."
+        else:
+            nb_jours = (self.date_fin.date().toPython() - self.date_debut.date().toPython()).days + 1
+            message = (
+                f"Charger l'aperçu interroge le site source pour les 14 stations, "
+                f"{nb_jours} fois (un par jour de la période) : ça peut prendre plusieurs minutes."
+            )
+        reponse = QMessageBox.question(
+            self, "Charger l'aperçu ?", f"{message}\nContinuer ?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reponse != QMessageBox.Yes:
+            return
+
+        if mode_jour_unique:
+            self._apercu_journalier_jour_unique()
+        else:
+            self._apercu_journalier_periode()
+
+    def _apercu_journalier_jour_unique(self):
+        jour = self.date_jour.date().toPython()
+        date_fin_cycle = datetime.combine(jour, time(6, 0))
+
+        self.bouton_apercu_journalier.setEnabled(False)
+        self.label_statut.setText("Chargement de l'aperçu (interrogation du site source)...")
+        QApplication.processEvents()
+        try:
+            df, infos, _ = recuperer_releve_precipitations(date_fin=date_fin_cycle)
+            if df.empty:
+                QMessageBox.information(self, "Aucune donnée", "Aucune mesure trouvée pour ce cycle.")
+                return
+
+            self.tabs_apercu_journalier.setVisible(False)
+            self.table_apercu.setVisible(True)
+            self.table_apercu.setHorizontalHeaderLabels([
+                "Station", "Pluie 24h (mm)", "Pluie 15j (mm)",
+                "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)",
+            ])
+            self._peupler_table_releve(self.table_apercu, df)
+            self.label_statut.setText(
+                f"Aperçu du cycle se terminant le {jour.strftime('%d/%m/%Y')} "
+                f"(campagne {infos['libelle_campagne']})."
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Impossible de charger l'aperçu :\n{e}")
+            self.label_statut.setText("")
+        finally:
+            self.bouton_apercu_journalier.setEnabled(True)
+
+    def _apercu_journalier_periode(self):
+        jour_debut = self.date_debut.date().toPython()
+        jour_fin = self.date_fin.date().toPython()
+        if not self._confirmer_periode_journaliere(jour_debut, jour_fin, "prévisualiser"):
+            return
+
+        self.bouton_apercu_journalier.setEnabled(False)
+        self.table_apercu.setVisible(False)
+        self.tabs_apercu_journalier.clear()
+        erreurs = []
+        jour = jour_debut
+        while jour <= jour_fin:
+            self.label_statut.setText(
+                f"Chargement de l'aperçu du {jour.strftime('%d/%m/%Y')} "
+                f"(interrogation du site source)..."
+            )
+            QApplication.processEvents()
+            try:
+                df, _, _ = recuperer_releve_precipitations(
+                    date_fin=datetime.combine(jour, time(6, 0)))
+                if not df.empty:
+                    onglet = self._construire_table_releve(df)
+                    self.tabs_apercu_journalier.addTab(onglet, jour.strftime("%d/%m"))
+            except Exception as e:
+                erreurs.append(f"{jour.strftime('%d/%m/%Y')} : {e}")
+            jour += timedelta(days=1)
+
+        self.tabs_apercu_journalier.setVisible(self.tabs_apercu_journalier.count() > 0)
+        message = f"Aperçu généré pour {self.tabs_apercu_journalier.count()} jour(s)."
+        if erreurs:
+            message += " Erreurs : " + "; ".join(erreurs)
+        self.label_statut.setText(message)
+        self.bouton_apercu_journalier.setEnabled(True)
 
     def _generer_journalier(self):
         if self.radio_mode_periode.isChecked():

@@ -2,7 +2,7 @@ import os
 from datetime import datetime, date, time, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.calcul_indicateurs import calculer_indicateurs
-from app.services.generateur_rapport import generer_rapport_journalier_excel
+from app.services.generateur_rapport import generer_rapport_journalier_excel, mettre_en_cache_releve_reseau
 from app.services.email_service import envoyer_rapport_par_email
 from app.services.sauvegarde import creer_sauvegarde_auto
 from app.utils.event_bus import event_bus
@@ -78,6 +78,8 @@ def _envoyer_rapport_pour_jour(jour):
     date_fin_cycle = datetime.combine(jour, time(6, 0))
     chemin_rapport, df_rapport, infos_rapport = generer_rapport_journalier_excel(date_fin=date_fin_cycle)
     print(f"[Scheduler 6h] Rapport journalier généré ({jour.strftime('%d/%m/%Y')}) : {chemin_rapport}")
+
+    mettre_en_cache_releve_reseau(df_rapport, jour)
 
     pluie_moyenne_reseau = df_rapport["Pluie 24h (mm)"].mean() if not df_rapport.empty else 0
     envoyer_rapport_par_email(

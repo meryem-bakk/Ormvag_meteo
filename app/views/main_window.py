@@ -1,10 +1,8 @@
 from app.views.carte_page import CartePage
 from app.views.dashboard_page import DashboardPage
 from app.views.utilisateurs_page import UtilisateursPage
-from app.views.stations_page import StationsPage
 from app.views.graphiques_page import GraphiquesPage
-from app.views.donnees_page import DonneesPage
-from app.views.import_page import ImportPage
+from app.views.gestion_donnees_page import GestionDonneesPage
 from app.views.indicateurs_page import IndicateursPage
 from app.views.rapports_page import RapportsPage
 from app.views.parametres_page import ParametresPage
@@ -13,16 +11,16 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QPushButton, QLabel, QStackedWidget, QFrame, QApplication
+    QPushButton, QLabel, QStackedWidget, QFrame, QApplication, QMessageBox
 )
 from PySide6.QtCore import Qt
 
 # Pages groupées par section pour clarifier la hiérarchie de navigation
 # (auparavant une liste plate de 10 boutons sans distinction).
 GROUPES_NAVIGATION = [
-    ("VUE D'ENSEMBLE", ["Tableau de bord", "Carte"]),
-    ("DONNÉES", ["Import des données", "Stations", "Données", "Graphiques"]),
-    ("ANALYSE", ["Indicateurs agroclimatiques", "Rapports"]),
+    ("VUE D'ENSEMBLE", ["Tableau de bord", "Rapports"]),
+    ("DONNÉES", ["Gestion des données", "Carte"]),
+    ("ANALYSE", ["Graphiques", "Indicateurs agroclimatiques"]),
     ("ADMINISTRATION", ["Utilisateurs", "Paramètres"]),
 ]
 
@@ -42,18 +40,14 @@ class MainWindow(QMainWindow):
         évite un blocage de l'interface ("Ne répond pas") juste après le login."""
         if nom_page == "Tableau de bord":
             return DashboardPage
-        if nom_page == "Stations":
-            return StationsPage
         if nom_page == "Graphiques":
             return GraphiquesPage
-        if nom_page == "Données":
-            return DonneesPage
+        if nom_page == "Gestion des données":
+            return GestionDonneesPage
         if nom_page == "Utilisateurs":
             return lambda: UtilisateursPage(self.utilisateur)
         if nom_page == "Carte":
             return CartePage
-        if nom_page == "Import des données":
-            return ImportPage
         if nom_page == "Indicateurs agroclimatiques":
             return IndicateursPage
         if nom_page == "Rapports":
@@ -152,6 +146,22 @@ class MainWindow(QMainWindow):
         )
 
     def _changer_page(self, index, bouton):
+        nom_page = self._noms_pages[index]
+
+        # Le modèle IA (Isolation Forest) des indicateurs est coûteux à
+        # construire : on demande confirmation avant de lancer ce calcul,
+        # plutôt que de bloquer l'interface sans prévenir au premier clic.
+        if index not in self._pages_construites and nom_page == "Indicateurs agroclimatiques":
+            reponse = QMessageBox.question(
+                self, "Ouvrir les indicateurs ?",
+                "Le calcul des indicateurs peut prendre quelques instants : construction du modèle IA "
+                "de détection d'anomalies (Isolation Forest) sur l'historique de toutes les stations.\n\n"
+                "Continuer ?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reponse != QMessageBox.Yes:
+                return
+
         self._mettre_a_jour_bouton_actif(bouton)
 
         if index not in self._pages_construites:
@@ -161,7 +171,6 @@ class MainWindow(QMainWindow):
             self.pages.setCurrentIndex(index)
             QApplication.processEvents()
 
-            nom_page = self._noms_pages[index]
             page = self._fabriques_pages[index]()
             ancienne = self.pages.widget(index)
             self.pages.removeWidget(ancienne)

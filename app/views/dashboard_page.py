@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QPushButton, QAbstractItemView
 )
-from PySide6.QtCore import Qt, QUrl, Signal, QTimer
+from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -16,6 +16,7 @@ from app.database import SessionLocal
 from app.models.station import Station
 from app.models.mesure import Mesure
 from app.models.indicateur_journalier import IndicateurJournalier
+from app.services.generateur_rapport import lire_cache_releve_reseau
 
 
 VARIABLES = {
@@ -73,19 +74,14 @@ def _appliquer_police_emoji(label: QLabel, taille=None):
 
 
 class DashboardPage(QWidget):
-    # Émis quand l'utilisateur double-clique sur une station à risque,
-    # pour permettre à la fenêtre principale de naviguer vers cette station.
-    station_selectionnee = Signal(int)
-
     def __init__(self):
         super().__init__()
         self.setStyleSheet(f"background-color: {COULEURS['fond']};")
 
         # Références conservées pour permettre un rafraîchissement sans
         # reconstruire toute l'interface (évite de recréer QWebEngineView etc.)
-        self._valeurs_cartes = {}
+        self._valeurs_releve_reseau = {}
         self._alertes_frames = {}
-        self._id_station_par_ligne = {}
 
         self._build_ui()
         self._demarrer_actualisation_auto()
@@ -141,12 +137,12 @@ class DashboardPage(QWidget):
 
         layout.addSpacing(10)
 
-        # --- Bande de statistiques (typographie + séparateurs, pas de cartes-boîtes) ---
-        self.grille_cartes = QHBoxLayout()
-        self.grille_cartes.setSpacing(0)
-        layout.addLayout(self.grille_cartes)
+        # --- Relevé des précipitations (moyenne réseau) : pleine largeur, juste
+        # sous le bandeau d'alertes, avant le graphique et la carte ---
+        self.bloc_releve_reseau = self._creer_bloc_releve_reseau()
+        layout.addWidget(self.bloc_releve_reseau)
 
-        # --- Corps : graphique (gauche) + mini-tableau/carte (droite) ---
+        # --- Corps : graphique (gauche) + résumé réseau et carte (droite) ---
         corps = QHBoxLayout()
         corps.setSpacing(24)
 
@@ -154,10 +150,9 @@ class DashboardPage(QWidget):
         corps.addWidget(self._diviseur_vertical())
 
         colonne_droite = QVBoxLayout()
-        colonne_droite.setSpacing(20)
-        self.bloc_risque = self._creer_bloc_stations_a_risque()
-        colonne_droite.addWidget(self.bloc_risque)
-        colonne_droite.addWidget(self._bloc_carte_miniature())
+        colonne_droite.setSpacing(18)
+        colonne_droite.addWidget(self._creer_bloc_stats_reseau())
+        colonne_droite.addWidget(self._bloc_carte_miniature(), stretch=1)
         corps.addLayout(colonne_droite, stretch=2)
 
         layout.addLayout(corps)
@@ -196,8 +191,8 @@ class DashboardPage(QWidget):
         derniers_indicateurs = self._recuperer_derniers_indicateurs()
 
         self._mettre_a_jour_bandeau_alertes(derniers_indicateurs)
-        self._mettre_a_jour_cartes()
-        self._mettre_a_jour_stations_a_risque(derniers_indicateurs)
+        self._mettre_a_jour_tableau_stats()
+        self._mettre_a_jour_releve_reseau()
         self._tracer_graphique()
         self._mettre_a_jour_carte_miniature()
 
@@ -209,10 +204,10 @@ class DashboardPage(QWidget):
 
     # ============== BANDE DE STATISTIQUES ==============
 
-    def _creer_carte(self, cle, titre, couleur):
+    def _creer_carte(self, cle, titre, couleur, dict_cible):
         """Crée un bloc de statistique (typographie + liséré de couleur, pas de
         carte-boîte avec ombre) et conserve les références des labels dynamiques
-        (valeur + tendance) dans self._valeurs_cartes[cle] pour mise à jour ultérieure."""
+        (valeur + tendance) dans dict_cible[cle] pour mise à jour ultérieure."""
         conteneur = QWidget()
         conteneur.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(conteneur)
@@ -242,14 +237,15 @@ class DashboardPage(QWidget):
         layout.addLayout(ligne_valeur)
 
         label_titre = QLabel(titre.upper())
+        label_titre.setWordWrap(True)
         label_titre.setStyleSheet(
-            f"color: {COULEURS['neutre']}; font-size: 10.5px; font-weight: 600; "
+            f"color: {COULEURS['neutre']}; font-size: 11.5px; font-weight: 700; "
             f"letter-spacing: 0.5px; border: none; background: transparent;"
         )
         layout.addWidget(label_titre)
         layout.addStretch()
 
-        self._valeurs_cartes[cle] = {"valeur": label_valeur, "tendance": label_tendance}
+        dict_cible[cle] = {"valeur": label_valeur, "tendance": label_tendance}
         return conteneur
 
     def _diviseur_vertical(self):
@@ -258,45 +254,68 @@ class DashboardPage(QWidget):
         diviseur.setStyleSheet("background-color: #e3e7eb; border: none;")
         return diviseur
 
-    def _mettre_a_jour_cartes(self):
-        if not self._valeurs_cartes:
-            cartes = [
-                ("stations", "Stations actives", COULEURS["primaire"]),
-                ("mesures", "Mesures aujourd'hui", COULEURS["succes"]),
-                ("temperature", "Température moyenne", COULEURS["attention"]),
-                ("surveillance", "Surveillance", COULEURS["violet"]),
-            ]
-            for i, (cle, titre_carte, couleur) in enumerate(cartes):
-                if i > 0:
-                    self.grille_cartes.addWidget(self._diviseur_vertical())
-                self.grille_cartes.addWidget(self._creer_carte(cle, titre_carte, couleur), stretch=1)
+    def _creer_bloc_stats_reseau(self):
+        """Petit tableau résumant l'état du réseau (stations actives, mesures du
+        jour, température moyenne, surveillance) - positionné au-dessus de la
+        carte plutôt qu'en bandeau pleine largeur, pour laisser plus de place au
+        graphique de tendance."""
+        bloc = QWidget()
+        bloc.setStyleSheet("background: transparent;")
+        bloc.setMaximumHeight(160)
+        layout = QVBoxLayout(bloc)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
+        bloc_titre, _ = self._titre_section("Résumé du réseau")
+        layout.addLayout(bloc_titre)
+
+        self.table_stats_reseau = QTableWidget()
+        self.table_stats_reseau.setColumnCount(2)
+        self.table_stats_reseau.setRowCount(4)
+        self.table_stats_reseau.horizontalHeader().setVisible(False)
+        self.table_stats_reseau.verticalHeader().setVisible(False)
+        self.table_stats_reseau.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table_stats_reseau.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table_stats_reseau.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_stats_reseau.setShowGrid(False)
+        self.table_stats_reseau.setFixedHeight(120)
+        self.table_stats_reseau.setStyleSheet(f"""
+            QTableWidget {{ background-color: white; color: {COULEURS['texte']}; border: none; }}
+            QTableWidget::item {{ border-bottom: 1px solid #ecf0f1; }}
+        """)
+
+        libelles = ["Stations actives", "Mesures aujourd'hui", "Température moyenne", "Surveillance"]
+        for row, libelle in enumerate(libelles):
+            item_libelle = QTableWidgetItem(libelle)
+            item_libelle.setForeground(QColor(COULEURS["neutre"]))
+            self.table_stats_reseau.setItem(row, 0, item_libelle)
+        layout.addWidget(self.table_stats_reseau)
+
+        return bloc
+
+    def _mettre_a_jour_tableau_stats(self):
         nb_stations = self._compter_stations_actives()
         nb_mesures_aujourdhui, temp_moyenne, delta_temp = self._stats_mesures_aujourdhui()
 
-        self._valeurs_cartes["stations"]["valeur"].setText(str(nb_stations))
-
-        self._valeurs_cartes["mesures"]["valeur"].setText(str(nb_mesures_aujourdhui))
-
-        self._valeurs_cartes["temperature"]["valeur"].setText(
-            f"{temp_moyenne} °C" if temp_moyenne is not None else "—"
-        )
-        label_tendance = self._valeurs_cartes["temperature"]["tendance"]
-        style_tendance = "font-size: 11px; font-weight: bold; border: none; background: transparent; color: {};"
-        if delta_temp is None:
-            label_tendance.setText("")
-        elif abs(delta_temp) < 0.05:
-            label_tendance.setText("→ stable")
-            label_tendance.setStyleSheet(style_tendance.format(COULEURS['neutre']))
-        else:
+        valeur_temp = f"{temp_moyenne} °C" if temp_moyenne is not None else "—"
+        if delta_temp is not None and abs(delta_temp) >= 0.05:
             fleche = "▲" if delta_temp > 0 else "▼"
-            couleur = COULEURS["danger"] if delta_temp > 0 else COULEURS["info"]
-            label_tendance.setText(f"{fleche} {abs(delta_temp):.1f} °C")
-            label_tendance.setStyleSheet(style_tendance.format(couleur))
+            valeur_temp += f"  {fleche}{abs(delta_temp):.1f}"
 
-        self._valeurs_cartes["surveillance"]["valeur"].setText(
-            "Active" if nb_mesures_aujourdhui > 0 else "En attente"
-        )
+        valeurs = [
+            str(nb_stations),
+            str(nb_mesures_aujourdhui),
+            valeur_temp,
+            "Active" if nb_mesures_aujourdhui > 0 else "En attente",
+        ]
+        for row, valeur in enumerate(valeurs):
+            item = QTableWidgetItem(valeur)
+            item.setForeground(QColor(COULEURS["texte"]))
+            item.setTextAlignment(Qt.AlignVCenter | Qt.AlignRight)
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            self.table_stats_reseau.setItem(row, 1, item)
 
     # ============== DONNÉES ==============
 
@@ -409,13 +428,13 @@ class DashboardPage(QWidget):
 
     # ============== GRAPHIQUE ENRICHI ==============
 
-    def _titre_section(self, texte):
+    def _titre_section(self, texte, taille=13.5):
         """Titre de section flanqué d'une règle inférieure — remplace la
         carte-boîte blanche avec ombre par une structure typographique."""
         bloc_titre = QVBoxLayout()
         bloc_titre.setSpacing(8)
         label = QLabel(texte)
-        label.setStyleSheet(f"font-weight: 700; color: {COULEURS['texte']}; font-size: 13.5px; border: none;")
+        label.setStyleSheet(f"font-weight: 700; color: {COULEURS['texte']}; font-size: {taille}px; border: none;")
         bloc_titre.addWidget(label)
         regle = QFrame()
         regle.setFixedHeight(2)
@@ -502,85 +521,71 @@ class DashboardPage(QWidget):
         self.figure.tight_layout()
         self.canvas.draw()
 
-    # ============== MINI-TABLEAU STATIONS À RISQUE ==============
+    # ============== MINI-TABLEAU RELEVÉ RÉSEAU (moyenne ORMVAG) ==============
 
-    def _creer_bloc_stations_a_risque(self):
+    def _creer_bloc_releve_reseau(self):
+        """Relevé des précipitations, avec la même mise en forme (typographie +
+        liséré de couleur) que le résumé du réseau, plutôt qu'un tableau
+        grillagé - plus lisible en pleine largeur."""
         bloc = QWidget()
         bloc.setStyleSheet("background: transparent;")
-        bloc.setMaximumHeight(340)
+        bloc.setMaximumHeight(190)
         layout = QVBoxLayout(bloc)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        bloc_titre, _ = self._titre_section("Stations à risque aujourd'hui")
+        bloc_titre, _ = self._titre_section("Relevé des précipitations — moyenne ORMVAG", taille=15)
         layout.addLayout(bloc_titre)
 
-        self.label_risque_vide = QLabel("Aucune alerte active.")
-        self.label_risque_vide.setStyleSheet(
-            f"color: {COULEURS['succes']}; font-size: 12px; border: none; background: transparent;"
+        self.label_releve_indisponible = QLabel(
+            "Pas encore disponible — se met à jour lors de la première tâche quotidienne (8h)."
         )
-        layout.addWidget(self.label_risque_vide)
+        self.label_releve_indisponible.setWordWrap(True)
+        self.label_releve_indisponible.setStyleSheet(
+            f"color: {COULEURS['texte']}; font-size: 12px; border: none; background: transparent;"
+        )
+        layout.addWidget(self.label_releve_indisponible)
 
-        self.table_risque = QTableWidget()
-        self.table_risque.setColumnCount(2)
-        self.table_risque.setHorizontalHeaderLabels(["Station", "Alerte(s)"])
-        self.table_risque.verticalHeader().setVisible(False)
-        self.table_risque.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table_risque.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table_risque.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table_risque.setAlternatingRowColors(True)
-        self.table_risque.setCursor(Qt.PointingHandCursor)
-        self.table_risque.setToolTip("Double-cliquez sur une station pour voir son détail")
-        self.table_risque.setStyleSheet(f"""
-            QTableWidget {{ background-color: white; color: {COULEURS['texte']}; border: none; gridline-color: #ecf0f1; }}
-            QTableWidget::item:alternate {{ background-color: #fafbfc; }}
-            QTableWidget::item:selected {{ background-color: #eaf2f8; color: {COULEURS['texte']}; }}
-            QHeaderView::section {{ background-color: #ecf0f1; color: {COULEURS['texte']}; padding: 4px; border: none; font-weight: bold; font-size: 11px; }}
-        """)
-        self.table_risque.cellDoubleClicked.connect(self._on_double_clic_station)
-        layout.addWidget(self.table_risque)
+        self.widget_grille_releve_reseau = QWidget()
+        self.widget_grille_releve_reseau.setStyleSheet("background: transparent;")
+        grille_releve_reseau = QHBoxLayout(self.widget_grille_releve_reseau)
+        grille_releve_reseau.setContentsMargins(0, 0, 0, 0)
+        grille_releve_reseau.setSpacing(0)
+
+        cartes_releve = [
+            ("pluie_24h", "Pluie 24h (mm)", COULEURS["info"]),
+            ("pluie_15j", "Pluie 15 derniers jours (mm)", COULEURS["primaire"]),
+            ("campagne_n", "Pluie campagne (n) (mm)", COULEURS["succes"]),
+            ("campagne_n1", "Pluie campagne (n-1) (mm)", COULEURS["neutre"]),
+        ]
+        for i, (cle, titre_carte, couleur) in enumerate(cartes_releve):
+            if i > 0:
+                grille_releve_reseau.addWidget(self._diviseur_vertical())
+            grille_releve_reseau.addWidget(
+                self._creer_carte(cle, titre_carte, couleur, self._valeurs_releve_reseau), stretch=1
+            )
+        layout.addWidget(self.widget_grille_releve_reseau)
 
         return bloc
 
-    def _mettre_a_jour_stations_a_risque(self, indicateurs):
-        a_risque = []
-        for i in indicateurs:
-            alertes = []
-            if i.gel_detecte:
-                alertes.append("Gel")
-            if i.stress_thermique:
-                alertes.append("Stress thermique")
-            if (i.bilan_hydrique_7j or 0) < 0:
-                alertes.append("Déficit hydrique")
-            if alertes:
-                a_risque.append((i.station_id, i.station.nom, ", ".join(alertes)))
-
-        self._id_station_par_ligne = {}
-
-        if not a_risque:
-            self.label_risque_vide.setVisible(True)
-            self.table_risque.setVisible(False)
+    def _mettre_a_jour_releve_reseau(self):
+        cache = lire_cache_releve_reseau()
+        if cache is None:
+            self.label_releve_indisponible.setVisible(True)
+            self.widget_grille_releve_reseau.setVisible(False)
             return
 
-        self.label_risque_vide.setVisible(False)
-        self.table_risque.setVisible(True)
+        self.label_releve_indisponible.setVisible(False)
+        self.widget_grille_releve_reseau.setVisible(True)
 
-        # Toutes les stations à risque sont listées (la table défile elle-même
-        # si besoin) plutôt que de tronquer avec un "+ N autres".
-        self.table_risque.setRowCount(len(a_risque))
-        for row, (station_id, nom, alertes) in enumerate(a_risque):
-            item_nom = QTableWidgetItem(nom)
-            item_nom.setForeground(QColor(COULEURS["texte"]))
-            item_alertes = QTableWidgetItem(alertes)
-            item_alertes.setForeground(QColor(COULEURS["danger"]))
-            self.table_risque.setItem(row, 0, item_nom)
-            self.table_risque.setItem(row, 1, item_alertes)
-            self._id_station_par_ligne[row] = station_id
-
-    def _on_double_clic_station(self, row, _colonne):
-        station_id = self._id_station_par_ligne.get(row)
-        if station_id is not None:
-            self.station_selectionnee.emit(station_id)
+        correspondance = {
+            "pluie_24h": "Pluie 24h (mm)",
+            "pluie_15j": "Pluie 15 derniers jours (mm)",
+            "campagne_n": "Pluie campagne n (mm)",
+            "campagne_n1": "Pluie campagne n-1 (mm)",
+        }
+        for cle, cle_cache in correspondance.items():
+            self._valeurs_releve_reseau[cle]["valeur"].setText(f"{cache.get(cle_cache, 0):.1f}")
 
     # ============== CARTE MINIATURE ==============
 

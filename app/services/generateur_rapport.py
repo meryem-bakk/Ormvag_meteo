@@ -1,4 +1,5 @@
 import os
+import json
 import calendar
 import numpy as np
 import pandas as pd
@@ -898,3 +899,39 @@ def generer_rapport_journalier_excel(dossier_sortie="Rapports", date_fin=None):
     chemin = os.path.join(dossier_sortie, nom_fichier)
     generer_excel_releve_precipitations(chemin, df, infos, tableau_mensuel)
     return chemin, df, infos
+
+
+CHEMIN_CACHE_RELEVE_RESEAU = ".cache_releve_reseau.json"
+
+_COLONNES_RELEVE_RESEAU = [
+    "Pluie 24h (mm)", "Pluie 15 derniers jours (mm)",
+    "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)",
+]
+
+
+def mettre_en_cache_releve_reseau(df, jour):
+    """Moyenne réseau des 4 colonnes du relevé des précipitations, mise en cache
+    dans un petit fichier JSON. Le calcul précis de "Pluie 24h" interroge le site
+    source en direct pour chacune des 14 stations (voir generateur_rapport._pluie_24h),
+    trop lent pour être refait à chaque affichage du tableau de bord — ce cache,
+    mis à jour une fois par jour lors de la tâche planifiée (voir scheduler.py),
+    permet au tableau de bord de simplement le relire, sans nouvel appel réseau."""
+    if df.empty:
+        return
+    contenu = {"jour": jour.isoformat()}
+    for colonne in _COLONNES_RELEVE_RESEAU:
+        contenu[colonne] = round(float(df[colonne].mean()), 1)
+    with open(CHEMIN_CACHE_RELEVE_RESEAU, "w", encoding="utf-8") as f:
+        json.dump(contenu, f, ensure_ascii=False)
+
+
+def lire_cache_releve_reseau():
+    """Retourne le contenu du cache (voir mettre_en_cache_releve_reseau), ou None
+    si la tâche planifiée n'a encore jamais tourné (première installation)."""
+    if not os.path.exists(CHEMIN_CACHE_RELEVE_RESEAU):
+        return None
+    try:
+        with open(CHEMIN_CACHE_RELEVE_RESEAU, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None

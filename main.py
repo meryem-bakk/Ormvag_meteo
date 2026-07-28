@@ -43,6 +43,7 @@ app.setStyleSheet("""
     QWidget { color: #2c3e50; }
     QMessageBox { background-color: white; }
     QMessageBox QLabel { color: black; }
+    QMessageBox QPushButton { color: black; background-color: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 4px; padding: 4px 14px; }
     QLineEdit, QDoubleSpinBox, QComboBox { color: #2c3e50; background-color: white; }
 """)
 

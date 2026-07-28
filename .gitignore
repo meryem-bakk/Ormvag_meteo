@@ -12,6 +12,8 @@ build/
 dist/
 arbre.txt
 .dernier_run_quotidien
+.cache_releve_reseau.json
+erreur.log
 *.npz
 !ML/parametres_lstm.npz
 ML/*.keras

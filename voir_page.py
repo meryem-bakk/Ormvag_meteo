@@ -27,6 +27,13 @@ module = importlib.import_module(nom_module)
 classe_page = getattr(module, nom_classe)
 
 app = QApplication(sys.argv)
+# Meme correctif que main.py : sans lui, les QMessageBox heritent parfois
+# du theme sombre Windows (texte blanc sur fond blanc, invisible).
+app.setStyleSheet("""
+    QMessageBox { background-color: white; }
+    QMessageBox QLabel { color: black; }
+    QMessageBox QPushButton { color: black; background-color: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 4px; padding: 4px 14px; }
+""")
 fenetre = classe_page()
 fenetre.setWindowTitle(f"Apercu autonome — {nom_classe}")
 fenetre.resize(1100, 750)
