@@ -137,8 +137,7 @@ class DashboardPage(QWidget):
 
         layout.addSpacing(10)
 
-        # --- Relevé des précipitations (moyenne réseau) : pleine largeur, juste
-        # sous le bandeau d'alertes, avant le graphique et la carte ---
+        # --- Relevé des précipitations (moyenne réseau) ---
         self.bloc_releve_reseau = self._creer_bloc_releve_reseau()
         layout.addWidget(self.bloc_releve_reseau)
 
@@ -255,10 +254,6 @@ class DashboardPage(QWidget):
         return diviseur
 
     def _creer_bloc_stats_reseau(self):
-        """Petit tableau résumant l'état du réseau (stations actives, mesures du
-        jour, température moyenne, surveillance) - positionné au-dessus de la
-        carte plutôt qu'en bandeau pleine largeur, pour laisser plus de place au
-        graphique de tendance."""
         bloc = QWidget()
         bloc.setStyleSheet("background: transparent;")
         bloc.setMaximumHeight(160)
@@ -524,9 +519,6 @@ class DashboardPage(QWidget):
     # ============== MINI-TABLEAU RELEVÉ RÉSEAU (moyenne ORMVAG) ==============
 
     def _creer_bloc_releve_reseau(self):
-        """Relevé des précipitations, avec la même mise en forme (typographie +
-        liséré de couleur) que le résumé du réseau, plutôt qu'un tableau
-        grillagé - plus lisible en pleine largeur."""
         bloc = QWidget()
         bloc.setStyleSheet("background: transparent;")
         bloc.setMaximumHeight(190)

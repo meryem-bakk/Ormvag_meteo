@@ -148,9 +148,7 @@ class MainWindow(QMainWindow):
     def _changer_page(self, index, bouton):
         nom_page = self._noms_pages[index]
 
-        # Le modèle IA (Isolation Forest) des indicateurs est coûteux à
-        # construire : on demande confirmation avant de lancer ce calcul,
-        # plutôt que de bloquer l'interface sans prévenir au premier clic.
+        # Construction du modèle IA (Isolation Forest) potentiellement longue
         if index not in self._pages_construites and nom_page == "Indicateurs agroclimatiques":
             reponse = QMessageBox.question(
                 self, "Ouvrir les indicateurs ?",

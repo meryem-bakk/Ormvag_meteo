@@ -1,7 +1,4 @@
-"""Page composite regroupant Import, Stations et Données dans une seule
-fenêtre à onglets, plutôt que trois pages séparées dans la barre latérale —
-ces trois modules concernent tous la gestion des mesures/stations et sont
-naturellement consultés ensemble."""
+"""Import, Stations et Données regroupées en une seule page à onglets."""
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from app.utils.theme import COULEURS
 from app.views.import_page import ImportPage
@@ -41,9 +38,6 @@ class GestionDonneesPage(QWidget):
         layout.addWidget(onglets)
 
     def rafraichir_donnees(self):
-        """Relaie l'actualisation automatique (event_bus) aux onglets qui en ont
-        besoin - Import n'a pas de contenu à rafraîchir en dehors d'une action
-        explicite de l'utilisateur (import en cours), donc rien à y relayer."""
         if hasattr(self.page_stations, "rafraichir_donnees"):
             self.page_stations.rafraichir_donnees()
         if hasattr(self.page_donnees, "rafraichir_donnees"):

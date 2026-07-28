@@ -179,10 +179,6 @@ class RapportsPage(QWidget):
             ligne_type.addWidget(radio)
             radio.toggled.connect(self._basculer_type_rapport)
             radio.toggled.connect(self._mettre_a_jour_apercu)
-        # Charge l'aperçu automatiquement dès la sélection de ce type (pas besoin
-        # du bouton pour le premier chargement) - un changement de date ensuite
-        # nécessite en revanche un clic explicite, pour ne pas relancer une
-        # requête réseau à chaque frappe (voir _mettre_a_jour_apercu).
         self.radio_journalier.toggled.connect(
             lambda coche: self._apercu_journalier() if coche else None)
         ligne_type.addStretch()
@@ -212,10 +208,6 @@ class RapportsPage(QWidget):
         self.label_apercu.setStyleSheet(f"color: {COULEURS['texte']}; font-size: 12px;")
         layout_droit.addWidget(self.label_apercu)
 
-        # Aperçu des données brutes (Synthèse/Détaillé uniquement - le relevé
-        # journalier n'agrège pas de lignes Mesure individuelles, voir
-        # _mettre_a_jour_apercu). Limité a quelques lignes : un simple aperçu,
-        # pas un remplacement du rapport complet.
         self.table_apercu = QTableWidget()
         self.table_apercu.setColumnCount(5)
         self.table_apercu.setHorizontalHeaderLabels(
@@ -233,9 +225,6 @@ class RapportsPage(QWidget):
         self.table_apercu.setAlternatingRowColors(True)
         layout_droit.addWidget(self.table_apercu)
 
-        # Le relevé journalier interroge le site source en direct par station
-        # (voir generateur_rapport._pluie_24h) : contrairement au reste de
-        # l'aperçu, non recalculé a chaque frappe mais seulement sur demande.
         self.bouton_apercu_journalier = QPushButton("Actualiser l'aperçu (interroge le site source)")
         self.bouton_apercu_journalier.setCursor(Qt.PointingHandCursor)
         self.bouton_apercu_journalier.setStyleSheet("""
@@ -246,9 +235,6 @@ class RapportsPage(QWidget):
         self.bouton_apercu_journalier.clicked.connect(self._apercu_journalier)
         layout_droit.addWidget(self.bouton_apercu_journalier)
 
-        # Un onglet par jour en mode "période" (chaque jour a ses propres valeurs,
-        # un seul tableau ne suffirait pas) - masqué en mode "jour unique", qui
-        # réutilise table_apercu directement.
         self.tabs_apercu_journalier = QTabWidget()
         self.tabs_apercu_journalier.setMaximumHeight(220)
         self.tabs_apercu_journalier.setStyleSheet(f"""
@@ -354,12 +340,8 @@ class RapportsPage(QWidget):
     NB_LIGNES_APERCU = 8
 
     def _mettre_a_jour_apercu(self):
-        """Résumé + aperçu des données qui seraient incluses, mis à jour à chaque
-        changement de filtre - pas de requête réseau ici (voir _pluie_24h) : pour
-        le relevé journalier, on affiche juste le cycle visé plutôt que d'interroger
-        le site source à chaque frappe, beaucoup trop lent pour un simple aperçu ;
-        ce relevé agrège de toute façon des cumuls, pas des lignes Mesure brutes,
-        donc le mini-tableau ne s'y applique pas."""
+        # Pas de requête réseau ici : le relevé journalier n'affiche que le
+        # cycle visé, le chargement réel se fait sur demande (_apercu_journalier).
         if self.radio_journalier.isChecked():
             self.table_apercu.setVisible(False)
             self.tabs_apercu_journalier.setVisible(False)
@@ -526,11 +508,8 @@ class RapportsPage(QWidget):
             QMessageBox.critical(self, "Erreur", f"Impossible de générer le rapport :\n{e}")
 
     def _lignes_releve(self, df):
-        """Construit les lignes du relevé : une par station, puis une moyenne par
-        province, puis la moyenne ORMVAG globale - pour situer chaque station par
-        rapport à son secteur et au réseau complet. Retourne une liste de
-        (est_moyenne, valeurs) ; est_moyenne sert à distinguer visuellement les
-        lignes de synthèse des lignes de station."""
+        """Une ligne par station, puis une moyenne par province, puis la moyenne
+        ORMVAG. Retourne (est_moyenne, valeurs) par ligne."""
         colonnes = ["Pluie 24h (mm)", "Pluie 15 derniers jours (mm)",
                     "Pluie campagne n (mm)", "Pluie campagne n-1 (mm)"]
         lignes = []
@@ -546,9 +525,6 @@ class RapportsPage(QWidget):
         return lignes
 
     def _peupler_table_releve(self, table, df):
-        """Remplit un QTableWidget déjà créé avec les lignes du relevé - factorisé
-        car utilisé aussi bien pour le jour unique (table persistante) que pour
-        chaque onglet du mode période (table créée à la volée)."""
         lignes = self._lignes_releve(df)
         table.setRowCount(len(lignes))
         for row, (est_moyenne, valeurs) in enumerate(lignes):
@@ -563,9 +539,6 @@ class RapportsPage(QWidget):
                 table.setItem(row, col, item)
 
     def _construire_table_releve(self, df):
-        """Construit un QTableWidget peuplé des colonnes du relevé - factorisé car
-        utilisé aussi bien pour le jour unique que pour chaque onglet du mode
-        période."""
         table = QTableWidget()
         table.setColumnCount(5)
         table.setHorizontalHeaderLabels([
@@ -586,11 +559,6 @@ class RapportsPage(QWidget):
         return table
 
     def _apercu_journalier(self):
-        """Aperçu du relevé officiel avec les vraies valeurs (Pluie 24h précise,
-        voir generateur_rapport._pluie_24h) : interroge le site source pour les
-        14 stations (× le nombre de jours en mode période), donc assez lent -
-        confirmation demandée avant de lancer, que le déclenchement soit
-        automatique (sélection du type) ou manuel (bouton actualiser)."""
         mode_jour_unique = self.radio_mode_jour.isChecked()
         if mode_jour_unique:
             message = "Charger l'aperçu interroge le site source pour les 14 stations : ça prend quelques secondes."

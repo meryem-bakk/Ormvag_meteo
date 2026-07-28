@@ -910,12 +910,8 @@ _COLONNES_RELEVE_RESEAU = [
 
 
 def mettre_en_cache_releve_reseau(df, jour):
-    """Moyenne réseau des 4 colonnes du relevé des précipitations, mise en cache
-    dans un petit fichier JSON. Le calcul précis de "Pluie 24h" interroge le site
-    source en direct pour chacune des 14 stations (voir generateur_rapport._pluie_24h),
-    trop lent pour être refait à chaque affichage du tableau de bord — ce cache,
-    mis à jour une fois par jour lors de la tâche planifiée (voir scheduler.py),
-    permet au tableau de bord de simplement le relire, sans nouvel appel réseau."""
+    """Interroger le site source à chaque affichage du tableau de bord serait
+    trop lent - le calcul est fait une fois par jour (scheduler.py) et mis en cache."""
     if df.empty:
         return
     contenu = {"jour": jour.isoformat()}
@@ -926,8 +922,7 @@ def mettre_en_cache_releve_reseau(df, jour):
 
 
 def lire_cache_releve_reseau():
-    """Retourne le contenu du cache (voir mettre_en_cache_releve_reseau), ou None
-    si la tâche planifiée n'a encore jamais tourné (première installation)."""
+    """None si la tâche planifiée n'a encore jamais tourné (première installation)."""
     if not os.path.exists(CHEMIN_CACHE_RELEVE_RESEAU):
         return None
     try:

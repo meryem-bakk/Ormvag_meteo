@@ -27,8 +27,7 @@ module = importlib.import_module(nom_module)
 classe_page = getattr(module, nom_classe)
 
 app = QApplication(sys.argv)
-# Meme correctif que main.py : sans lui, les QMessageBox heritent parfois
-# du theme sombre Windows (texte blanc sur fond blanc, invisible).
+# Meme correctif que main.py, contre le theme sombre Windows sur les QMessageBox
 app.setStyleSheet("""
     QMessageBox { background-color: white; }
     QMessageBox QLabel { color: black; }
