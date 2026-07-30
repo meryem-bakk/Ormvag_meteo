@@ -20,12 +20,12 @@ from app.services.generateur_rapport import lire_cache_releve_reseau
 
 
 VARIABLES = {
-    "Température (°C)": "temperature",
-    "Humidité (%)": "humidite",
     "Pluie (mm)": "pluie",
+    "Température (°C)": "temperature",
+    "Évapotranspiration (mm)": "eto",
+    "Humidité (%)": "humidite",
     "Vent (km/h)": "vent",
     "Rayonnement (W/m²)": "rayonnement",
-    "Évapotranspiration (mm)": "eto",
 }
 
 # Noms français pour éviter de dépendre de la locale système (source du bug
@@ -301,7 +301,7 @@ class DashboardPage(QWidget):
             str(nb_stations),
             str(nb_mesures_aujourdhui),
             valeur_temp,
-            "Active" if nb_mesures_aujourdhui > 0 else "En attente",
+            "Complète" if nb_mesures_aujourdhui == 14 else "Non complète" if nb_mesures_aujourdhui > 0 else "En attente",
         ]
         for row, valeur in enumerate(valeurs):
             item = QTableWidgetItem(valeur)
@@ -375,12 +375,12 @@ class DashboardPage(QWidget):
     # ============== BANDEAU D'ALERTES ==============
 
     def _mettre_a_jour_bandeau_alertes(self, indicateurs):
-        nb_gel = sum(1 for i in indicateurs if i.gel_detecte)
+        nb_inondation = sum(1 for i in indicateurs if i.risque_inondation)
         nb_stress = sum(1 for i in indicateurs if i.stress_thermique)
         nb_deficit = sum(1 for i in indicateurs if (i.bilan_hydrique_7j or 0) < 0)
 
         valeurs = {
-            "gel": ("Stations en gel", nb_gel, COULEURS["info"]),
+            "inondation": ("Risque d'inondation", nb_inondation, COULEURS["violet"]),
             "stress": ("Stress thermique", nb_stress, COULEURS["attention"]),
             "deficit": ("Déficit hydrique (7j)", nb_deficit, COULEURS["danger"]),
         }
@@ -593,7 +593,7 @@ class DashboardPage(QWidget):
 
         legende = QHBoxLayout()
         for couleur, texte in [
-            (COULEURS["succes"], "OK"), (COULEURS["attention"], "Déficit"), (COULEURS["danger"], "Gel / stress")
+            (COULEURS["succes"], "OK"), (COULEURS["attention"], "Déficit"), (COULEURS["danger"], "innondation / stress")
         ]:
             point = QLabel("●")
             point.setStyleSheet(f"color: {couleur}; font-size: 12px; border: none; background: transparent;")
@@ -653,7 +653,7 @@ class DashboardPage(QWidget):
             ind = indicateurs_par_station.get(s.id)
             couleur = COULEURS["succes"]
             if ind:
-                if ind.gel_detecte or ind.stress_thermique:
+                if ind.risque_inondation or ind.stress_thermique:
                     couleur = COULEURS["danger"]
                 elif (ind.bilan_hydrique_7j or 0) < 0:
                     couleur = COULEURS["attention"]

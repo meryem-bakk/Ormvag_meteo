@@ -18,6 +18,7 @@ class IndicateurJournalier(Base):
     jours_sans_pluie = Column(Integer)
     gel_detecte = Column(Boolean, default=False)       # temp_min < 0°C
     stress_thermique = Column(Boolean, default=False)  # temp_max > 38°C
+    risque_inondation = Column(Boolean, default=False)  # pluie forte du jour sur sol déjà saturé (bilan hydrique 7j positif)
     gdd_jour = Column(Float)            # degrés-jours de croissance (base 10°C)
     gdd_cumule_saison = Column(Float)
 

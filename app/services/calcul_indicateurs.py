@@ -6,6 +6,7 @@ from app.models.mesure import Mesure
 from app.models.indicateur_journalier import IndicateurJournalier
 
 TEMP_BASE_GDD = 10  # température de base pour le calcul des degrés-jours (courant pour céréales)
+SEUIL_PLUIE_FORTE_MM = 30  # pluie journalière jugée forte - seuil provisoire, à valider avec le SED
 
 # Un indicateur déjà calculé pour un jour antérieur à cette fenêtre est considéré
 # stable (les mesures "Mesuré" de cette période ne changent plus) : inutile de le
@@ -93,6 +94,9 @@ def calculer_indicateurs(log=print, forcer_tout=False):
         df["gel_detecte"] = df["temp_min"] < 0
         df["stress_thermique"] = df["temp_max"] > 38
 
+        # Risque d'inondation : pluie forte du jour tombant sur un sol déjà saturé
+        df["risque_inondation"] = (df["pluie"] > SEUIL_PLUIE_FORTE_MM) & (df["bilan_hydrique_7j"] > 0)
+
         # Degrés-jours de croissance (GDD), cumulés depuis le début de saison
         df["gdd_jour"] = (df["temp_moy"] - TEMP_BASE_GDD).clip(lower=0)
         df_saison_gdd = df[df["date"] >= debut_saison].copy()
@@ -138,6 +142,7 @@ def calculer_indicateurs(log=print, forcer_tout=False):
                 jours_sans_pluie=int(ligne["jours_sans_pluie"]),
                 gel_detecte=bool(ligne["gel_detecte"]) if pd.notna(ligne["gel_detecte"]) else False,
                 stress_thermique=bool(ligne["stress_thermique"]) if pd.notna(ligne["stress_thermique"]) else False,
+                risque_inondation=bool(ligne["risque_inondation"]) if pd.notna(ligne["risque_inondation"]) else False,
                 gdd_jour=ligne["gdd_jour"] if pd.notna(ligne["gdd_jour"]) else None,
                 gdd_cumule_saison=ligne["gdd_cumule_saison"] if pd.notna(ligne["gdd_cumule_saison"]) else None,
             ))

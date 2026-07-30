@@ -97,6 +97,7 @@ class IndicateursPage(QWidget):
             ("Jours sans pluie", "Nombre de jours consécutifs sans précipitation enregistrée, jusqu'à la date la plus récente."),
             ("Gel détecté", "Seuil : température minimale < 0°C (définition météorologique standard)."),
             ("Stress thermique", "Seuil : température maximale > 38°C. Seuil indicatif pour cultures méditerranéennes, à ajuster selon les cultures suivies."),
+            ("Risque d'inondation", "Seuil provisoire : pluie du jour > 30 mm sur un sol déjà saturé (bilan hydrique 7j positif). À valider avec le SED."),
             ("GDD (degrés-jours de croissance)", "Cumulé depuis le 1er septembre (début de saison agricole). Calculé avec une température de base de 10°C, valeur courante pour cultures d'été (maïs) — à ajuster selon la culture."),
             ("Alerte canicule", "Seuil : température maximale > 40°C."),
             ("Alerte vent fort", "Seuil : vitesse du vent > 40 km/h."),
@@ -156,7 +157,7 @@ class IndicateursPage(QWidget):
 
         layout.addWidget(self._label_section("Historique (30 derniers jours)"))
         self.tableau = QTableWidget()
-        colonnes = ["Date", "Cumul pluie 7j", "Cumul pluie 30j", "Bilan hydrique 7j", "Jours sans pluie", "Gel", "Stress thermique", "GDD cumulé"]
+        colonnes = ["Date", "Cumul pluie 7j", "Cumul pluie 30j", "Bilan hydrique 7j", "Jours sans pluie", "Gel", "Stress thermique", "Inondation", "GDD cumulé"]
         self.tableau.setColumnCount(len(colonnes))
         self.tableau.setHorizontalHeaderLabels(colonnes)
         self.tableau.verticalHeader().setVisible(False)
@@ -372,6 +373,7 @@ class IndicateursPage(QWidget):
             ("Jours sans pluie", str(dernier.jours_sans_pluie) if dernier.jours_sans_pluie is not None else "—", "#e67e22"),
             ("Gel détecté", "Oui" if dernier.gel_detecte else "Non", "#c0392b" if dernier.gel_detecte else "#27ae60"),
             ("Stress thermique", "Oui" if dernier.stress_thermique else "Non", "#c0392b" if dernier.stress_thermique else "#27ae60"),
+            ("Risque d'inondation", "Oui" if dernier.risque_inondation else "Non", "#c0392b" if dernier.risque_inondation else "#27ae60"),
             ("GDD cumulé (saison)", f"{dernier.gdd_cumule_saison:.0f}" if dernier.gdd_cumule_saison is not None else "—", "#8e44ad"),
         ]
 
@@ -417,6 +419,7 @@ class IndicateursPage(QWidget):
                 str(ind.jours_sans_pluie) if ind.jours_sans_pluie is not None else "—",
                 "Oui" if ind.gel_detecte else "Non",
                 "Oui" if ind.stress_thermique else "Non",
+                "Oui" if ind.risque_inondation else "Non",
                 f"{ind.gdd_cumule_saison:.0f}" if ind.gdd_cumule_saison is not None else "—",
             ]
             for col, valeur in enumerate(valeurs):
