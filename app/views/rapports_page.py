@@ -7,10 +7,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 import os
+import pandas as pd
 from datetime import datetime, time, timedelta
 from app.database import SessionLocal
 from app.models.station import Station
-from app.models.mesure import Mesure
 from app.services.generateur_rapport import (
     recuperer_donnees, generer_pdf, generer_excel, generer_csv,
     recuperer_synthese, generer_graphique_temperature, generer_pdf_synthese,
@@ -365,43 +365,51 @@ class RapportsPage(QWidget):
         self.bouton_apercu_journalier.setVisible(False)
         self.tabs_apercu_journalier.setVisible(False)
         self.table_apercu.setVisible(True)
-        self.table_apercu.setHorizontalHeaderLabels(
-            ["Station", "Date", "Type", "Pluie (mm)", "Temp. moy (°C)"])
+
         station_ids = self._stations_selectionnees()
         date_debut, date_fin = self._bornes_periode()
         nb_stations = len(self.cases_stations) if station_ids is None else len(station_ids)
 
-        session = SessionLocal()
-        try:
-            base = session.query(Mesure).filter(
-                Mesure.date_heure >= date_debut, Mesure.date_heure <= date_fin,
+        # L'aperçu réutilise les mêmes fonctions que la génération réelle (recuperer_synthese
+        # / recuperer_donnees) plutôt qu'une requête ad hoc, pour rester fidèle aux colonnes
+        # et à la forme (une ligne par station en synthèse, une ligne par mesure en détaillé)
+        # du rapport effectivement produit.
+        if self.radio_synthese.isChecked():
+            df = recuperer_synthese(station_ids, date_debut, date_fin)
+            df_affiche = df
+            resume = (
+                f"Aperçu : {nb_stations} station(s) sélectionnée(s) · période du "
+                f"{date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')} · "
+                f"indicateurs agrégés par station ci-dessous."
             )
-            if station_ids:
-                base = base.filter(Mesure.station_id.in_(station_ids))
-            nb_mesures = base.count()
-            premieres_lignes = base.order_by(Mesure.date_heure.desc()).limit(self.NB_LIGNES_APERCU).all()
+        else:
+            df = recuperer_donnees(station_ids, date_debut, date_fin)
+            df_affiche = df.head(self.NB_LIGNES_APERCU)
+            resume = (
+                f"Aperçu : {nb_stations} station(s) sélectionnée(s) · période du "
+                f"{date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')} · "
+                f"{len(df)} mesure(s) trouvée(s)"
+                + (f", {len(df_affiche)} premières ci-dessous :" if len(df) else "."))
 
-            self.table_apercu.setRowCount(len(premieres_lignes))
-            for row, m in enumerate(premieres_lignes):
-                valeurs = [
-                    m.station.nom,
-                    m.date_heure.strftime("%d/%m/%Y"),
-                    m.type_donnee or "—",
-                    f"{m.pluie:.1f}" if m.pluie is not None else "—",
-                    f"{m.temperature:.1f}" if m.temperature is not None else "—",
-                ]
-                for col, valeur in enumerate(valeurs):
-                    item = QTableWidgetItem(valeur)
-                    item.setTextAlignment(Qt.AlignCenter)
-                    self.table_apercu.setItem(row, col, item)
-        finally:
-            session.close()
+        self._peupler_table_apercu(df_affiche)
+        self.label_apercu.setText(resume)
 
-        self.label_apercu.setText(
-            f"Aperçu : {nb_stations} station(s) sélectionnée(s) · période du "
-            f"{date_debut.strftime('%d/%m/%Y')} au {date_fin.strftime('%d/%m/%Y')} · "
-            f"{nb_mesures} mesure(s) trouvée(s)"
-            + (f", {self.NB_LIGNES_APERCU} plus récentes ci-dessous :" if nb_mesures else "."))
+    def _peupler_table_apercu(self, df):
+        colonnes = df.columns.tolist()
+        self.table_apercu.setColumnCount(len(colonnes))
+        self.table_apercu.setHorizontalHeaderLabels(colonnes)
+        self.table_apercu.setRowCount(len(df))
+        for row, (_, ligne) in enumerate(df.iterrows()):
+            for col, valeur in enumerate(ligne):
+                if pd.isna(valeur):
+                    texte = "—"
+                elif isinstance(valeur, float):
+                    texte = f"{valeur:.1f}"
+                else:
+                    texte = str(valeur)
+                item = QTableWidgetItem(texte)
+                item.setTextAlignment(Qt.AlignCenter)
+                self.table_apercu.setItem(row, col, item)
 
     def _appliquer_raccourci(self, jours):
         self.radio_mode_periode.setChecked(True)
