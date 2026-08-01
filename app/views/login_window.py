@@ -126,7 +126,7 @@ class LoginWindow(QWidget):
         bouton_connexion.clicked.connect(self._tenter_connexion)
         layout_carte.addWidget(bouton_connexion)
 
-        footer = QLabel("© ORMVAG - Tous droits réservés")
+        footer = QLabel("© ORMVAG ")
         footer.setStyleSheet("color: #bdc3c7; font-size: 10px; margin-top: 16px;")
         footer.setAlignment(Qt.AlignCenter)
         layout_carte.addWidget(footer)
