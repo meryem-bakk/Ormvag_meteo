@@ -7,7 +7,7 @@ from app.views.donnees_page import DonneesPage
 
 
 class GestionDonneesPage(QWidget):
-    def __init__(self):
+    def __init__(self, utilisateur):
         super().__init__()
         self.setStyleSheet(f"background-color: {COULEURS['fond']};")
 
@@ -27,9 +27,9 @@ class GestionDonneesPage(QWidget):
             QTabBar::tab:hover:!selected {{ background-color: #ecf0f1; }}
         """)
 
-        self.page_import = ImportPage()
-        self.page_stations = StationsPage()
-        self.page_donnees = DonneesPage()
+        self.page_import = ImportPage(utilisateur)
+        self.page_stations = StationsPage(utilisateur)
+        self.page_donnees = DonneesPage(utilisateur)
 
         onglets.addTab(self.page_import, "Import")
         onglets.addTab(self.page_stations, "Stations")

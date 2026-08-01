@@ -6,12 +6,14 @@ from PySide6.QtCore import Qt
 from app.workers.import_worker import ImportManuelWorker, TacheQuotidienneWorker
 from app.utils.event_bus import event_bus
 from app.utils.theme import COULEURS, titre_section
+from app.utils.permissions import peut_ecrire_donnees
 
 
 class ImportPage(QWidget):
-    def __init__(self):
+    def __init__(self, utilisateur):
         super().__init__()
         self.setStyleSheet(f"background-color: {COULEURS['fond']};")
+        self.utilisateur = utilisateur
         self.worker = None
         self._build_ui()
 
@@ -43,6 +45,9 @@ class ImportPage(QWidget):
         self.bouton_tache_complete.setCursor(Qt.PointingHandCursor)
         self.bouton_tache_complete.setStyleSheet(self._style_bouton("#8e44ad", "#6c3483"))
         self.bouton_tache_complete.clicked.connect(self._lancer_tache_complete)
+        if not peut_ecrire_donnees(self.utilisateur):
+            self.bouton_tache_complete.setEnabled(False)
+            self.bouton_tache_complete.setToolTip("Réservé aux rôles Technicien et Administrateur.")
         ligne_tache.addWidget(self.bouton_tache_complete)
         ligne_tache.addStretch()
         layout.addLayout(ligne_tache)
@@ -62,6 +67,9 @@ class ImportPage(QWidget):
         self.bouton_choisir_fichier.setCursor(Qt.PointingHandCursor)
         self.bouton_choisir_fichier.setStyleSheet(self._style_bouton("#27ae60", "#1e8449"))
         self.bouton_choisir_fichier.clicked.connect(self._choisir_et_importer_fichier)
+        if not peut_ecrire_donnees(self.utilisateur):
+            self.bouton_choisir_fichier.setEnabled(False)
+            self.bouton_choisir_fichier.setToolTip("Réservé aux rôles Technicien et Administrateur.")
         ligne_manuel.addWidget(self.bouton_choisir_fichier)
         ligne_manuel.addStretch()
         layout.addLayout(ligne_manuel)

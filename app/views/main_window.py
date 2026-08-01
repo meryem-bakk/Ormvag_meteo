@@ -43,15 +43,15 @@ class MainWindow(QMainWindow):
         if nom_page == "Graphiques":
             return GraphiquesPage
         if nom_page == "Gestion des données":
-            return GestionDonneesPage
+            return lambda: GestionDonneesPage(self.utilisateur)
         if nom_page == "Utilisateurs":
             return lambda: UtilisateursPage(self.utilisateur)
         if nom_page == "Carte":
             return CartePage
         if nom_page == "Indicateurs agroclimatiques":
-            return IndicateursPage
+            return lambda: IndicateursPage(self.utilisateur)
         if nom_page == "Rapports":
-            return RapportsPage
+            return lambda: RapportsPage(self.utilisateur)
         if nom_page == "Paramètres":
             return lambda: ParametresPage(self.utilisateur)
         return lambda: self._creer_page_vide(nom_page)

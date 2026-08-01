@@ -5,6 +5,7 @@ from datetime import datetime
 from PySide6.QtWidgets import QApplication, QMessageBox
 from app.views.login_window import LoginWindow
 from app.views.main_window import MainWindow
+from sqlalchemy.orm import joinedload
 from app.database import SessionLocal
 from app.models.user import User
 from app.utils.enter_focus_filter import FiltreEntreeChampSuivant
@@ -54,7 +55,7 @@ scheduler = demarrer_scheduler()
 
 if MODE_TEST_SANS_LOGIN:
     session = SessionLocal()
-    utilisateur_test = session.query(User).filter_by(username="admin").first()
+    utilisateur_test = session.query(User).options(joinedload(User.role)).filter_by(username="admin").first()
     session.close()
     fenetre = MainWindow(utilisateur_test)
 else:

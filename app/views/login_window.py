@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
+from sqlalchemy.orm import joinedload
 from app.database import SessionLocal
 from app.models.user import User
 from app.views.main_window import MainWindow
@@ -167,7 +168,11 @@ class LoginWindow(QWidget):
             return
 
         session = SessionLocal()
-        user = session.query(User).filter_by(username=utilisateur, actif=True).first()
+        # joinedload : le role doit rester lisible (permissions par role) apres la
+        # fermeture de la session ci-dessous, sinon acces differe = DetachedInstanceError.
+        user = session.query(User).options(joinedload(User.role)).filter_by(
+            username=utilisateur, actif=True
+        ).first()
 
         if user and bcrypt.checkpw(mdp.encode("utf-8"), user.password_hash.encode("utf-8")):
             user.derniere_connexion = datetime.now()

@@ -14,12 +14,14 @@ from app.workers.import_worker import IndicateursWorker
 from app.services.alertes import detecter_alertes, detecter_anomalies_temperature
 from app.services.detection_anomalies_ml import detecter_anomalies_mesures
 from app.utils.theme import COULEURS as PALETTE, diviseur_horizontal
+from app.utils.permissions import peut_ecrire_donnees
 
 
 class IndicateursPage(QWidget):
-    def __init__(self):
+    def __init__(self, utilisateur):
         super().__init__()
         self.setStyleSheet("background-color: #f4f6f8;")
+        self.utilisateur = utilisateur
         self.worker = None
         self._build_ui()
         self._charger_stations_dans_combo()
@@ -58,6 +60,9 @@ class IndicateursPage(QWidget):
         self.bouton_recalculer.setCursor(Qt.PointingHandCursor)
         self.bouton_recalculer.setStyleSheet(self._style_bouton("#8e44ad", "#6c3483"))
         self.bouton_recalculer.clicked.connect(self._recalculer)
+        if not peut_ecrire_donnees(self.utilisateur):
+            self.bouton_recalculer.setEnabled(False)
+            self.bouton_recalculer.setToolTip("Réservé aux rôles Technicien et Administrateur.")
         entete.addWidget(self.bouton_recalculer)
 
         self.label_derniere_maj = QLabel("")

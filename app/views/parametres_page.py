@@ -13,6 +13,7 @@ from app.models.user import User
 from app.services.historique import enregistrer as enregistrer_historique
 from app.services.sauvegarde import trouver_pg_dump, executer_pg_dump
 from app.utils.theme import COULEURS, titre_section
+from app.utils.permissions import est_administrateur
 
 
 class ParametresPage(QWidget):
@@ -164,6 +165,10 @@ class ParametresPage(QWidget):
         bouton.setMaximumWidth(largeur_champ)
         bouton.setStyleSheet(self._style_bouton("#1a5276", "#154360"))
         bouton.clicked.connect(self._enregistrer_destinataires)
+        if not est_administrateur(self.utilisateur_connecte):
+            self.champ_destinataires.setEnabled(False)
+            bouton.setEnabled(False)
+            bouton.setToolTip("Réservé au rôle Administrateur.")
         bloc.addWidget(bouton)
 
         return bloc
@@ -220,6 +225,9 @@ class ParametresPage(QWidget):
         bouton.setCursor(Qt.PointingHandCursor)
         bouton.setStyleSheet(self._style_bouton("#27ae60", "#1e8449"))
         bouton.clicked.connect(self._creer_sauvegarde)
+        if not est_administrateur(self.utilisateur_connecte):
+            bouton.setEnabled(False)
+            bouton.setToolTip("Réservé au rôle Administrateur.")
         ligne_bouton.addWidget(bouton)
         ligne_bouton.addStretch()
         bloc.addLayout(ligne_bouton)

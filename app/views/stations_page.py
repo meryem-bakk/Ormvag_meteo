@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor
 from app.database import SessionLocal
 from app.models.station import Station
 from app.utils.theme import COULEURS, titre_section
+from app.utils.permissions import peut_ecrire_donnees
 
 
 class StationsPage(QWidget):
@@ -15,9 +16,10 @@ class StationsPage(QWidget):
     station_modifiee = Signal(Station)
     station_supprimee = Signal(Station)
 
-    def __init__(self):
+    def __init__(self, utilisateur):
         super().__init__()
         self.setStyleSheet(f"background-color: {COULEURS['fond']};")
+        self.utilisateur = utilisateur
         self.station_en_edition_id = None
         self.stations_cache = []
         self._build_ui()
@@ -120,6 +122,12 @@ class StationsPage(QWidget):
         self.bouton_valider.clicked.connect(self._valider_formulaire)
         layout_boutons_form.addWidget(self.bouton_valider)
 
+        if not peut_ecrire_donnees(self.utilisateur):
+            for champ in (self.champ_nom, self.champ_code, self.champ_latitude, self.champ_longitude):
+                champ.setEnabled(False)
+            self.bouton_valider.setEnabled(False)
+            self.bouton_valider.setToolTip("Réservé aux rôles Technicien et Administrateur.")
+
         conteneur_boutons = QWidget()
         conteneur_boutons.setLayout(layout_boutons_form)
         conteneur_boutons.setStyleSheet("background-color: transparent; border: none;")
@@ -150,6 +158,11 @@ class StationsPage(QWidget):
         self.bouton_supprimer.setStyleSheet(self._style_bouton("#c0392b", "#a93226"))
         self.bouton_supprimer.clicked.connect(self._supprimer_station)
         layout_actions.addWidget(self.bouton_supprimer)
+
+        if not peut_ecrire_donnees(self.utilisateur):
+            for bouton in (self.bouton_modifier, self.bouton_supprimer):
+                bouton.setEnabled(False)
+                bouton.setToolTip("Réservé aux rôles Technicien et Administrateur.")
 
         layout.addLayout(layout_actions)
 

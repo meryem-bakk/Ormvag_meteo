@@ -12,6 +12,7 @@ from app.models.role import Role
 from app.models.historique_modification import HistoriqueModification
 from app.services.historique import enregistrer as enregistrer_historique
 from app.utils.theme import COULEURS, titre_section
+from app.utils.permissions import est_administrateur
 
 
 class UtilisateursPage(QWidget):
@@ -127,6 +128,17 @@ class UtilisateursPage(QWidget):
         self.bouton_reinitialiser_mdp.setStyleSheet(self._style_bouton("#8e44ad", "#6c3483"))
         self.bouton_reinitialiser_mdp.clicked.connect(self._reinitialiser_mot_de_passe)
         layout_actions.addWidget(self.bouton_reinitialiser_mdp)
+
+        if not est_administrateur(self.utilisateur_connecte):
+            champs = (
+                self.champ_username, self.champ_nom_complet, self.champ_email,
+                self.combo_role, self.champ_mdp, self.case_actif,
+            )
+            for champ in champs:
+                champ.setEnabled(False)
+            for bouton in (self.bouton_valider, self.bouton_modifier, self.bouton_reinitialiser_mdp):
+                bouton.setEnabled(False)
+                bouton.setToolTip("Réservé au rôle Administrateur.")
 
         layout.addLayout(layout_actions)
 

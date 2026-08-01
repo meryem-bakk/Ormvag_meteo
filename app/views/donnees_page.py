@@ -12,10 +12,11 @@ from app.models.mesure import Mesure
 
 
 class DonneesPage(QWidget):
-   
-    def __init__(self):
+
+    def __init__(self, utilisateur):
         super().__init__()
         self.setStyleSheet("background-color: #f4f6f8;")
+        self.utilisateur = utilisateur
         self.mesures_courantes = []
         self._build_ui()
         self._charger_stations_dans_combo()

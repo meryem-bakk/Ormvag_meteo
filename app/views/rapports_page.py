@@ -19,6 +19,7 @@ from app.services.generateur_rapport import (
 )
 from app.services.email_service import envoyer_rapport_par_email
 from app.utils.theme import COULEURS, titre_section, diviseur_vertical
+from app.utils.permissions import peut_ecrire_donnees
 import io
 import matplotlib
 matplotlib.use("Agg")
@@ -27,9 +28,10 @@ from reportlab.platypus import Image
 from app.models.indicateur_journalier import IndicateurJournalier
 
 class RapportsPage(QWidget):
-    def __init__(self):
+    def __init__(self, utilisateur):
         super().__init__()
         self.setStyleSheet(f"background-color: {COULEURS['fond']};")
+        self.utilisateur = utilisateur
         self.cases_stations = {}
         self._build_ui()
         self._charger_stations()
@@ -273,6 +275,11 @@ class RapportsPage(QWidget):
         """)
         bouton_email.clicked.connect(self._envoyer_par_email)
         ligne_boutons.addWidget(bouton_email, stretch=1)
+
+        if not peut_ecrire_donnees(self.utilisateur):
+            for bouton in (bouton_generer, bouton_email):
+                bouton.setEnabled(False)
+                bouton.setToolTip("Réservé aux rôles Technicien et Administrateur.")
 
         layout_droit.addLayout(ligne_boutons)
 
