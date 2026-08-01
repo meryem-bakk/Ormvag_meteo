@@ -1,13 +1,25 @@
+import os
+import sys
 import bcrypt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox, QFrame
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from app.database import SessionLocal
 from app.models.user import User
 from app.views.main_window import MainWindow
 from datetime import datetime
+
+# En exécutable PyInstaller, __file__ pointe vers le dossier d'extraction
+# temporaire (voir main.py / detection_anomalies_ml.py pour le même correctif).
+if getattr(sys, "frozen", False):
+    _RACINE_PROJET = os.path.dirname(sys.executable)
+else:
+    _RACINE_PROJET = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CHEMIN_LOGO_ICONE = os.path.join(_RACINE_PROJET, "assets", "logo_icone.png")
+
 
 class LoginWindow(QWidget):
     def __init__(self):
@@ -35,13 +47,16 @@ class LoginWindow(QWidget):
         layout_gauche.setContentsMargins(40, 40, 40, 40)
         layout_gauche.setSpacing(16)
 
-        icone = QLabel("🌦️")
-        icone.setStyleSheet("font-size: 64px;")
+        icone = QLabel()
+        icone.setStyleSheet("background: transparent;")
+        pixmap_icone = QPixmap(CHEMIN_LOGO_ICONE)
+        if not pixmap_icone.isNull():
+            icone.setPixmap(pixmap_icone.scaledToHeight(90, Qt.SmoothTransformation))
         icone.setAlignment(Qt.AlignCenter)
         layout_gauche.addWidget(icone)
 
         titre_gauche = QLabel("ORMVAG\nMÉTÉO MANAGER")
-        titre_gauche.setStyleSheet("color: white; font-size: 24px; font-weight: bold;")
+        titre_gauche.setStyleSheet("color: white; font-size: 24px; font-weight: bold; background: transparent;")
         titre_gauche.setAlignment(Qt.AlignCenter)
         layout_gauche.addWidget(titre_gauche)
 
@@ -50,12 +65,12 @@ class LoginWindow(QWidget):
             "des données météorologiques\n"
             "du périmètre du Gharb"
         )
-        sous_titre_gauche.setStyleSheet("color: #cdd9e5; font-size: 13px;")
+        sous_titre_gauche.setStyleSheet("color: #cdd9e5; font-size: 13px; background: transparent;")
         sous_titre_gauche.setAlignment(Qt.AlignCenter)
         layout_gauche.addWidget(sous_titre_gauche)
 
         stats_rapides = QLabel("14 stations  •  Surveillance continue  •  Aide à la décision")
-        stats_rapides.setStyleSheet("color: #85a9c4; font-size: 11px; margin-top: 20px;")
+        stats_rapides.setStyleSheet("color: #85a9c4; font-size: 11px; margin-top: 20px; background: transparent;")
         stats_rapides.setAlignment(Qt.AlignCenter)
         layout_gauche.addWidget(stats_rapides)
 
