@@ -254,6 +254,7 @@ def recuperer_synthese(station_ids, date_debut, date_fin):
             Mesure.station_id == station.id,
             Mesure.date_heure >= date_debut,
             Mesure.date_heure <= date_fin,
+            Mesure.type_donnee == "Mesuré",
         ).all()
 
         if not mesures:
