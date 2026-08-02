@@ -113,8 +113,11 @@ class CartePage(QWidget):
         <div id="carte"></div>
         <script>
             var map = L.map('carte').setView([{centre_lat}, {centre_lon}], 9);
-            L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                attribution: '© OpenStreetMap contributors'
+            // Esri World Street Map plutot que les tuiles OpenStreetMap standard :
+            // ces dernieres affichent le Sahara Occidental comme un territoire
+            // distinct (avec sa propre frontiere et son nom), ce qu'Esri ne fait pas.
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+                attribution: 'Tiles &copy; Esri'
             }}).addTo(map);
             {marqueurs_js}
         </script>
