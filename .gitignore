@@ -8,6 +8,7 @@ Rapports/
 *.xlsx
 *.csv
 .vscode/
+*.code-workspace
 build/
 dist/
 arbre.txt
