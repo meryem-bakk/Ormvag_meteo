@@ -5,14 +5,13 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 ## Fonctionnalités
 
 - **Tableau de bord** : vue d'ensemble en temps réel (stations actives, mesures du jour, température moyenne, tendances) avec alertes (gel, stress thermique, déficit hydrique) et carte interactive des stations.
-- **Import de données** : import manuel ou automatique de mesures météo (fichiers Excel/CSV), traitement en arrière-plan, plus un script d'import d'historique pluriannuel (voir [Module Machine Learning](#module-machine-learning-ml)).
-- **Gestion des stations** : création, modification, suivi de l'état des stations de mesure.
-- **Indicateurs agroclimatiques** : calcul automatique d'indicateurs journaliers (gel, stress thermique, bilan hydrique) à partir des mesures brutes.
+- **Gestion des données** : page à onglets regroupant l'import (manuel ou automatique, fichiers Excel/CSV, traitement en arrière-plan, plus un script d'import d'historique pluriannuel — voir [Module Machine Learning](#module-machine-learning-ml)), la gestion des stations (création, modification, suivi de l'état) et la consultation des mesures brutes.
+- **Indicateurs agroclimatiques** : calcul automatique d'indicateurs journaliers (gel, stress thermique, risque d'inondation, bilan hydrique) à partir des mesures brutes.
 - **Graphiques** : visualisation des tendances par variable (température, humidité, pluie, vent) sur différentes périodes.
 - **Rapports** : génération de rapports (PDF/Excel/CSV) à partir des données collectées, groupés par province, avec envoi manuel par email depuis l'interface.
 - **Détection d'anomalies (IA)** : en complément des règles de plausibilité physique, un modèle Isolation Forest signale les journées statistiquement atypiques (page **Indicateurs**).
 - **Carte** : localisation des stations avec statut visuel (OK / déficit / alerte).
-- **Gestion des utilisateurs et rôles** : authentification, contrôle d'accès, et historique des modifications (création/modification de compte, changement de rôle, réinitialisation de mot de passe).
+- **Gestion des utilisateurs et rôles** : authentification, contrôle d'accès basé sur 3 rôles (Administrateur, Technicien, Consultation — les actions d'écriture non autorisées pour le rôle connecté sont désactivées dans l'interface plutôt que simplement masquées), et historique des modifications (création/modification de compte, changement de rôle, réinitialisation de mot de passe).
 - **Sauvegarde** : sauvegarde manuelle depuis l'interface, et sauvegarde automatique planifiée chaque jour à 8h00.
 - **Tâche planifiée quotidienne (8h00)** : import des dernières mesures, recalcul des indicateurs, génération et envoi par email du rapport journalier, sauvegarde de la base (voir sections dédiées ci-dessous).
 
@@ -34,7 +33,7 @@ app/
 ├── services/         # Logique métier (alertes, calcul d'indicateurs, rapports, email, sauvegarde, historique,
 │                      #   planification, prévision_ml, detection_anomalies_ml)
 ├── utils/            # Utilitaires
-├── views/             # Pages de l'interface (tableau de bord, import, stations, graphiques, etc.)
+├── views/             # Pages de l'interface (tableau de bord, gestion des données, graphiques, etc.)
 ├── workers/          # Traitements en arrière-plan (import de données)
 └── database.py        # Configuration de la connexion à la base de données
 ML/                    # Pipeline Machine Learning (voir section dédiée ci-dessous)
@@ -170,6 +169,8 @@ Le **LSTM** a été implémenté et branché à l'application (page dédiée **P
 6. `ML/entrainer_detecteur_anomalies.py` — entraîne et sauvegarde le détecteur d'anomalies.
 
 Pour re-générer les modèles avec des données à jour, relancer les étapes 4 à 6 (les étapes 1 à 3 ne sont utiles que si de nouvelles données brutes doivent être importées/nettoyées).
+
+D'autres scripts d'analyse ponctuelle complètent ce module, sans intégration à l'application : `ML/typologie_stations_saisons.py` (regroupement des stations par profil climatique, classification des campagnes agricoles par rapport à la normale) et `ML/correlation_stations.py` (corrélation de Pearson entre stations pour la pluie et la température, en complément de la typologie).
 
 **Limites connues**, à garder en tête pour toute interprétation des résultats :
 - Le modèle de pluie détecte bien *qu'il va pleuvoir* (rappel ~78-85 %) mais sous-estime souvent la *quantité* lors des épisodes pluvieux, et génère un nombre notable de fausses alertes (précision ~33-35 %) — se fier à la tendance plutôt qu'au chiffre exact.
