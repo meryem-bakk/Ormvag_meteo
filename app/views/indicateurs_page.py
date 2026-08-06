@@ -160,7 +160,7 @@ class IndicateursPage(QWidget):
         self.grille_cartes.setColumnStretch(3, 1)
         layout.addLayout(self.grille_cartes)
 
-        layout.addWidget(self._label_section("Historique (30 derniers jours)"))
+        layout.addWidget(self._label_section("Historique (15 derniers jours)"))
         self.tableau = QTableWidget()
         colonnes = ["Date", "Cumul pluie 7j", "Cumul pluie 30j", "Bilan hydrique 7j", "Jours sans pluie", "Gel", "Stress thermique", "Inondation", "GDD cumulé"]
         self.tableau.setColumnCount(len(colonnes))
@@ -229,7 +229,7 @@ class IndicateursPage(QWidget):
 
         historique = session.query(IndicateurJournalier).filter(
             IndicateurJournalier.station_id == station_id,
-            IndicateurJournalier.date >= date.today() - timedelta(days=30)
+            IndicateurJournalier.date >= date.today() - timedelta(days=15)
         ).order_by(IndicateurJournalier.date.desc()).all()
 
         # Seules les mesures confirmées ("Mesuré") alimentent alertes et détection
@@ -242,7 +242,7 @@ class IndicateursPage(QWidget):
 
         mesures_historique = session.query(Mesure).filter(
             Mesure.station_id == station_id,
-            Mesure.date_heure >= date.today() - timedelta(days=30),
+            Mesure.date_heure >= date.today() - timedelta(days=15),
             Mesure.type_donnee == "Mesuré",
         ).order_by(Mesure.date_heure).all()
 
