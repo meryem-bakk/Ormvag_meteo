@@ -15,6 +15,7 @@ arbre.txt
 .dernier_run_quotidien
 .cache_releve_reseau.json
 erreur.log
+app.log
 *.npz
 !ML/parametres_lstm.npz
 ML/*.keras

@@ -6,6 +6,7 @@ from app.services.generateur_rapport import generer_rapport_journalier_excel, me
 from app.services.email_service import envoyer_rapport_par_email
 from app.services.sauvegarde import creer_sauvegarde_auto
 from app.utils.event_bus import event_bus
+from app.utils.logger import logger
 
 # APScheduler ne déclenche la tâche de 6h que si l'application est ouverte à cet
 # instant précis — si elle est fermée, la tâche est simplement sautée, sans
@@ -60,8 +61,8 @@ def _jours_manques():
 
     nb_jours = (aujourdhui - dernier_run).days
     if nb_jours > MAX_JOURS_RATTRAPAGE:
-        print(f"[Scheduler] Absence de {nb_jours} jour(s) détectée : rattrapage "
-              f"limité aux {MAX_JOURS_RATTRAPAGE} derniers cycles.")
+        logger.info(f"[Scheduler] Absence de {nb_jours} jour(s) détectée : rattrapage "
+                    f"limité aux {MAX_JOURS_RATTRAPAGE} derniers cycles.")
         dernier_run = aujourdhui - timedelta(days=MAX_JOURS_RATTRAPAGE)
 
     jours = []
@@ -77,7 +78,7 @@ def _envoyer_rapport_pour_jour(jour):
     matin du `jour` donné (ex. jour=13/07 -> cycle 12/07 06h -> 13/07 06h)."""
     date_fin_cycle = datetime.combine(jour, time(6, 0))
     chemin_rapport, df_rapport, infos_rapport = generer_rapport_journalier_excel(date_fin=date_fin_cycle)
-    print(f"[Scheduler 6h] Rapport journalier généré ({jour.strftime('%d/%m/%Y')}) : {chemin_rapport}")
+    logger.info(f"[Scheduler 6h] Rapport journalier généré ({jour.strftime('%d/%m/%Y')}) : {chemin_rapport}")
 
     mettre_en_cache_releve_reseau(df_rapport, jour)
 
@@ -94,7 +95,7 @@ def _envoyer_rapport_pour_jour(jour):
             "Cordialement,\nORMVAG — Système météo automatisé"
         ),
     )
-    print(f"[Scheduler 6h] Rapport journalier envoyé par email ({jour.strftime('%d/%m/%Y')}).")
+    logger.info(f"[Scheduler 6h] Rapport journalier envoyé par email ({jour.strftime('%d/%m/%Y')}).")
 
 
 def tache_quotidienne_6h():
@@ -113,7 +114,7 @@ def tache_quotidienne_6h():
     cycle le plus récent), un seul recalcul d'indicateurs et une seule
     sauvegarde (pas besoin d'une sauvegarde par jour manqué).
     """
-    print("[Scheduler 6h] Démarrage de la tâche quotidienne...")
+    logger.info("[Scheduler 6h] Démarrage de la tâche quotidienne...")
 
     jours_manques = _jours_manques() or [_date_reference_6h()]
     jours_a_couvrir = len(jours_manques)
@@ -129,35 +130,35 @@ def tache_quotidienne_6h():
     try:
         from import_automatique import lancer_import_complet
         total_importe, erreurs = lancer_import_complet(
-            jours_a_recuperer=max(jours_a_couvrir + 2, JOURS_MIN_REIMPORT), log=print)
-        print(f"[Scheduler 6h] Import terminé : {total_importe} mesure(s), {len(erreurs)} erreur(s).")
+            jours_a_recuperer=max(jours_a_couvrir + 2, JOURS_MIN_REIMPORT), log=logger.info)
+        logger.info(f"[Scheduler 6h] Import terminé : {total_importe} mesure(s), {len(erreurs)} erreur(s).")
         import_reussi = True
     except Exception as e:
-        print(f"[Scheduler 6h] Erreur lors de l'import automatique : {e}")
+        logger.error(f"[Scheduler 6h] Erreur lors de l'import automatique : {e}")
 
     try:
-        total_indicateurs = calculer_indicateurs(log=print)
-        print(f"[Scheduler 6h] Indicateurs recalculés : {total_indicateurs}.")
+        total_indicateurs = calculer_indicateurs(log=logger.info)
+        logger.info(f"[Scheduler 6h] Indicateurs recalculés : {total_indicateurs}.")
     except Exception as e:
-        print(f"[Scheduler 6h] Erreur lors du calcul des indicateurs : {e}")
+        logger.error(f"[Scheduler 6h] Erreur lors du calcul des indicateurs : {e}")
 
     if jours_a_couvrir > 1:
-        print(f"[Scheduler 6h] Rattrapage : {jours_a_couvrir} cycle(s) manqué(s), "
-              f"un rapport sera envoyé pour chacun.")
+        logger.info(f"[Scheduler 6h] Rattrapage : {jours_a_couvrir} cycle(s) manqué(s), "
+                    f"un rapport sera envoyé pour chacun.")
 
     for jour in jours_manques:
         try:
             _envoyer_rapport_pour_jour(jour)
         except Exception as e:
-            print(f"[Scheduler 6h] Erreur lors de la génération/envoi du rapport "
-                  f"journalier du {jour.strftime('%d/%m/%Y')} : {e}")
+            logger.error(f"[Scheduler 6h] Erreur lors de la génération/envoi du rapport "
+                         f"journalier du {jour.strftime('%d/%m/%Y')} : {e}")
 
     try:
-        chemin_sauvegarde = creer_sauvegarde_auto(log=print)
+        chemin_sauvegarde = creer_sauvegarde_auto(log=logger.info)
         if chemin_sauvegarde:
-            print(f"[Scheduler 6h] Sauvegarde automatique créée : {chemin_sauvegarde}")
+            logger.info(f"[Scheduler 6h] Sauvegarde automatique créée : {chemin_sauvegarde}")
     except Exception as e:
-        print(f"[Scheduler 6h] Erreur lors de la sauvegarde automatique : {e}")
+        logger.error(f"[Scheduler 6h] Erreur lors de la sauvegarde automatique : {e}")
 
     # Le marqueur n'avance que si l'import a reussi : une panne reseau transitoire
     # (voir erreur ci-dessus) ne doit pas faire passer la journee pour "traitee" -
@@ -168,10 +169,10 @@ def tache_quotidienne_6h():
     if import_reussi:
         _marquer_tache_executee()
     else:
-        print("[Scheduler 6h] Import echoue : la tache sera retentee au prochain "
-              "demarrage plutot que consideree comme terminee pour aujourd'hui.")
+        logger.warning("[Scheduler 6h] Import echoue : la tache sera retentee au prochain "
+                        "demarrage plutot que consideree comme terminee pour aujourd'hui.")
     event_bus.donnees_mises_a_jour.emit()
-    print("[Scheduler 6h] Tâche quotidienne terminée, pages notifiées.")
+    logger.info("[Scheduler 6h] Tâche quotidienne terminée, pages notifiées.")
 
 
 def demarrer_scheduler():
@@ -189,8 +190,8 @@ def demarrer_scheduler():
     calculer_indicateurs()
 
     if not _tache_deja_executee_aujourdhui():
-        print("[Scheduler] Tâche quotidienne pas encore exécutée aujourd'hui "
-              "(app probablement fermée à 8h00) — rattrapage en arrière-plan.")
+        logger.info("[Scheduler] Tâche quotidienne pas encore exécutée aujourd'hui "
+                    "(app probablement fermée à 8h00) — rattrapage en arrière-plan.")
         scheduler.add_job(tache_quotidienne_6h, id="rattrapage_quotidien")
 
     return scheduler

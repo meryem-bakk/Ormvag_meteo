@@ -10,17 +10,12 @@ from app.database import SessionLocal
 from app.models.user import User
 from app.utils.enter_focus_filter import FiltreEntreeChampSuivant
 from app.services.scheduler import demarrer_scheduler
+from app.utils.chemins import racine_projet
 from PySide6.QtGui import QIcon
 
 MODE_TEST_SANS_LOGIN = False  # Mettre à True pour ignorer l'écran de connexion et se connecter automatiquement avec l'utilisateur "admin"
 
-# En exécutable PyInstaller, __file__ pointe vers le dossier d'extraction
-# temporaire, pas vers le projet — l'icône doit alors être cherchée à côté
-# de l'exécutable plutôt que relativement au code source.
-if getattr(sys, "frozen", False):
-    _RACINE_PROJET = os.path.dirname(sys.executable)
-else:
-    _RACINE_PROJET = os.path.dirname(os.path.abspath(__file__))
+_RACINE_PROJET = racine_projet()
 
 # En mode windowed (pas de console), une exception non interceptee dans un
 # slot Qt (ex. construction paresseuse d'une page) ne s'affiche nulle part :

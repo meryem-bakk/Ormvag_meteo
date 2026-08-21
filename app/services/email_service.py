@@ -5,6 +5,7 @@ import mimetypes
 import smtplib
 from email.message import EmailMessage
 from dotenv import load_dotenv
+from app.utils.logger import logger
 
 load_dotenv()
 
@@ -54,8 +55,8 @@ def envoyer_rapport_par_email(chemin_fichier, sujet, corps):
         except (socket.gaierror, OSError, smtplib.SMTPException) as e:
             derniere_erreur = e
             if tentative < NB_TENTATIVES_ENVOI:
-                print(f"[email_service] Tentative {tentative}/{NB_TENTATIVES_ENVOI} échouée "
-                      f"({e}) — nouvel essai dans {DELAI_ENTRE_TENTATIVES_S}s...")
+                logger.warning(f"[email_service] Tentative {tentative}/{NB_TENTATIVES_ENVOI} échouée "
+                               f"({e}) — nouvel essai dans {DELAI_ENTRE_TENTATIVES_S}s...")
                 time.sleep(DELAI_ENTRE_TENTATIVES_S)
 
     raise derniere_erreur

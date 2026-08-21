@@ -7,6 +7,7 @@ from app.views.indicateurs_page import IndicateursPage
 from app.views.rapports_page import RapportsPage
 from app.views.parametres_page import ParametresPage
 from app.utils.event_bus import event_bus
+from app.utils.logger import logger
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -139,7 +140,7 @@ class MainWindow(QMainWindow):
                 try:
                     page.rafraichir_donnees()
                 except Exception as e:
-                    print(f"Erreur lors du rafraîchissement de la page '{nom_page}' : {e}")
+                    logger.error(f"Erreur lors du rafraîchissement de la page '{nom_page}' : {e}")
 
         self.label_derniere_maj.setText(
             f"Dernière mise à jour auto : {datetime.now().strftime('%d/%m/%Y %H:%M')}"
