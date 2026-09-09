@@ -27,9 +27,12 @@ else:
 CHEMIN_ENV = os.path.join(RACINE, ".env")
 CHEMIN_PG_INSTALLER = os.path.join(RACINE, "bin", "postgresql-18.4-2-windows-x64.exe")
 
-# Le code applicatif (app/) est un dossier frere de installateur/ dans le depot ;
-# une fois construit en exe, PyInstaller l'embarque directement (voir Installateur.spec).
-sys.path.insert(0, os.path.dirname(RACINE))
+# Le code applicatif (app/) n'est plus un dossier frere direct de installateur/ depuis la
+# restructuration en packaging/ (installateur/ est maintenant sous packaging/, app/ se
+# trouve deux niveaux au-dessus) ; en exe, PyInstaller l'a de toute facon deja embarque
+# au moment du build (voir Installateur.spec) - ce chemin ne sert qu'en execution depuis
+# les sources.
+sys.path.insert(0, os.path.dirname(os.path.dirname(RACINE)))
 
 
 def pg_port_ouvert():

@@ -1,6 +1,11 @@
 import os
 import sys
 import glob
+# Outil deplace sous outils/ (racine du depot = deux niveaux au-dessus) : sans ce
+# chemin explicite, "from app..." echoue quand ce script est lance directement
+# (python outils/importer_historique_excel.py), Python resolvant les imports depuis
+# le dossier du script et non depuis le dossier courant.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 from app.database import SessionLocal
 from app.models.station import Station

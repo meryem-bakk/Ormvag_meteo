@@ -3,7 +3,7 @@
 # Installateur autonome ORMVAG Meteo Manager : installe PostgreSQL, cree la
 # base/le schema et seed les donnees de base. Distinct de ORMVAG-Meteo.spec
 # (l'application principale) - a lancer une seule fois, avant elle.
-# Usage : pyinstaller Installateur.spec
+# Usage (depuis la racine du depot) : pyinstaller packaging/Installateur.spec
 
 import os
 import sys
@@ -38,7 +38,7 @@ for nom_dll in dlls_requises:
 
 a = Analysis(
     ["installateur/installer.py"],
-    pathex=["."],
+    pathex=[".."],
     binaries=binaries_supplementaires,
     datas=[],
     hiddenimports=[

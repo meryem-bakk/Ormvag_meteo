@@ -538,7 +538,7 @@ def _connexion_pluie_brute(log=print):
     connexion échoue (réseau indisponible, identifiants absents...) : le rapport doit
     quand même se générer, avec un repli sur l'agrégé journalier (voir _pluie_24h)."""
     try:
-        from import_automatique import se_connecter
+        from app.services.import_meteo import se_connecter
         return se_connecter(log=log)
     except Exception as e:
         log(f"[Rapport] Connexion au site source impossible, repli sur l'agrégé "
@@ -555,7 +555,7 @@ def _pluie_24h(session, session_web, station, jour_fin, log=print):
     6h du matin — voir _cumul_station_periode)."""
     if session_web is not None:
         try:
-            from import_automatique import IDS_SITE, cumul_pluie_brute
+            from app.services.import_meteo import IDS_SITE, cumul_pluie_brute
             id_site = IDS_SITE.get(station.identifiant_externe)
             if id_site is not None:
                 debut = datetime.combine(jour_fin - timedelta(days=1), time(6, 0))

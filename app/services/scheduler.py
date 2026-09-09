@@ -128,7 +128,7 @@ def tache_quotidienne_6h():
 
     import_reussi = False
     try:
-        from import_automatique import lancer_import_complet
+        from app.services.import_meteo import lancer_import_complet
         total_importe, erreurs = lancer_import_complet(
             jours_a_recuperer=max(jours_a_couvrir + 2, JOURS_MIN_REIMPORT), log=logger.info)
         logger.info(f"[Scheduler 6h] Import terminé : {total_importe} mesure(s), {len(erreurs)} erreur(s).")

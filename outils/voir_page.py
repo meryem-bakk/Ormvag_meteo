@@ -2,22 +2,27 @@
 login ni la fenetre principale - pour iterer rapidement en modifiant une page
 et en relancant juste ce script (bien plus rapide que l'app complete ou l'exe).
 
-Usage : venv\\Scripts\\python.exe voir_page.py rapports
-        venv\\Scripts\\python.exe voir_page.py indicateurs
+Usage (depuis la racine du depot) :
+        venv\\Scripts\\python.exe outils\\voir_page.py rapports
+        venv\\Scripts\\python.exe outils\\voir_page.py indicateurs
         (nom du fichier dans app/views/, sans "_page.py")
 """
+import os
 import sys
 import inspect
 import importlib
+# Outil deplace sous outils/ (racine du depot = un niveau au-dessus) : sans ce chemin
+# explicite, "from app..." echoue quand ce script est lance directement, Python
+# resolvant les imports depuis le dossier du script et non depuis le dossier courant.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PySide6.QtWidgets import QApplication
 from sqlalchemy.orm import joinedload
 from app.database import SessionLocal
 from app.models.user import User
 
 if len(sys.argv) != 2:
-    print("Usage : python voir_page.py <nom_page>")
+    print("Usage (depuis la racine du depot) : python outils/voir_page.py <nom_page>")
     print("Pages disponibles :")
-    import os
     for nom in sorted(os.listdir("app/views")):
         if nom.endswith("_page.py"):
             print(" -", nom.removesuffix("_page.py"))

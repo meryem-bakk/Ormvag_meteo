@@ -1,7 +1,7 @@
 """Initialisation des données de base d'une installation neuve : rôles,
 compte administrateur, et les 14 stations réelles du réseau ORMVAG. Utilisé
-par seed_admin.py/seed_roles.py/seed_stations_reelles.py (usage manuel) et par
-l'installateur automatique (installateur/installer.py)."""
+par outils/seed/seed_admin.py, seed_roles.py, seed_stations_reelles.py (usage
+manuel) et par l'installateur automatique (packaging/installateur/installer.py)."""
 import os
 import secrets
 import bcrypt

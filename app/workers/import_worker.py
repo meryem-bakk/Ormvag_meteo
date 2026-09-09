@@ -10,7 +10,7 @@ class ImportAutoWorker(QThread):
         self.jours = jours
 
     def run(self):
-        from import_automatique import lancer_import_complet
+        from app.services.import_meteo import lancer_import_complet
         total, erreurs = lancer_import_complet(jours_a_recuperer=self.jours, log=self.ligne_log.emit)
         self.termine.emit(total, len(erreurs))
 
@@ -24,7 +24,7 @@ class ImportManuelWorker(QThread):
         self.chemin_fichier = chemin_fichier
 
     def run(self):
-        from importer_donnees_reelles import importer_fichier
+        from app.services.import_manuel import importer_fichier
         from app.services.calcul_indicateurs import calculer_indicateurs
 
         total = importer_fichier(self.chemin_fichier, log=self.ligne_log.emit)
@@ -47,14 +47,27 @@ class TacheQuotidienneWorker(QThread):
     termine = Signal()
 
     def run(self):
-        import builtins
-        ancien_print = builtins.print
-        builtins.print = lambda *args, **kwargs: self.ligne_log.emit(" ".join(str(a) for a in args))
+        import logging
+        from app.utils.logger import logger
 
+        # scheduler.py journalise via `logger` (app.log) plutot que print() depuis le
+        # correctif de logging - on branche temporairement un handler qui relaie chaque
+        # ligne vers le signal Qt, pour garder l'affichage en direct dans la page Import.
+        class _HandlerVersSignal(logging.Handler):
+            def __init__(self, callback):
+                super().__init__()
+                self.callback = callback
+
+            def emit(self, record):
+                self.callback(self.format(record))
+
+        handler = _HandlerVersSignal(self.ligne_log.emit)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
         try:
             from app.services.scheduler import tache_quotidienne_6h
             tache_quotidienne_6h()
         finally:
-            builtins.print = ancien_print
+            logger.removeHandler(handler)
 
         self.termine.emit()

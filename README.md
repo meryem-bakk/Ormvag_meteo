@@ -31,14 +31,23 @@ Application de bureau (PySide6) pour la collecte, le suivi et l'analyse des donn
 app/
 ├── models/          # Modèles SQLAlchemy (Station, Mesure, IndicateurJournalier, Role, User, HistoriqueModification)
 ├── services/         # Logique métier (alertes, calcul d'indicateurs, rapports, email, sauvegarde, historique,
-│                      #   planification, prévision_ml, detection_anomalies_ml)
+│                      #   planification, prévision_ml, detection_anomalies_ml, import_meteo, import_manuel)
 ├── utils/            # Utilitaires
 ├── views/             # Pages de l'interface (tableau de bord, gestion des données, graphiques, etc.)
 ├── workers/          # Traitements en arrière-plan (import de données)
 └── database.py        # Configuration de la connexion à la base de données
 ML/                    # Pipeline Machine Learning (voir section dédiée ci-dessous)
-seed_*.py              # Scripts d'initialisation de la base (rôles, admin, stations, mesures)
-importer_historique_excel.py  # Import d'historique météo pluriannuel depuis des exports Excel
+outils/                # Scripts de dev, jamais utilisés par l'app packagée
+├── seed/              #   Initialisation de la base (rôles, admin, stations)
+├── importer_historique_excel.py  #   Import d'historique météo pluriannuel depuis des exports Excel
+├── test_connexion.py  #   Vérifie la connexion DB et crée les tables
+└── voir_page.py        #   Ouvre une seule page de l'app en fenêtre autonome
+packaging/              # Tout ce qui concerne la construction des exécutables
+├── ORMVAG-Meteo.spec / Installateur.spec
+├── rebuild_exe.ps1 / rebuild_installateur.ps1
+└── installateur/       #   Installateur PostgreSQL autonome
+docs/                   # Documentation (INSTALLATION.txt, rapport de stage)
+assets/                 # Logo et icônes
 main.py                # Point d'entrée de l'application
 ```
 
@@ -46,7 +55,7 @@ main.py                # Point d'entrée de l'application
 
 ### Déploiement sur un poste utilisateur (sans Python)
 
-Pour un poste ne disposant pas encore de PostgreSQL, un installateur autonome (`Installateur-ORMVAG.exe`, voir `installateur/`) détecte si PostgreSQL est déjà actif, sinon l'installe silencieusement depuis l'installeur officiel EnterpriseDB embarqué, puis crée la base, le schéma et les données de base (rôles, compte admin, stations réelles). Lancer cet exécutable une seule fois, puis `ORMVAG-Meteo.exe` — voir la section [Construire les exécutables](#construire-les-exécutables).
+Pour un poste ne disposant pas encore de PostgreSQL, un installateur autonome (`Installateur-ORMVAG.exe`, voir `packaging/installateur/`) détecte si PostgreSQL est déjà actif, sinon l'installe silencieusement depuis l'installeur officiel EnterpriseDB embarqué, puis crée la base, le schéma et les données de base (rôles, compte admin, stations réelles). Lancer cet exécutable une seule fois, puis `ORMVAG-Meteo.exe` — voir la section [Construire les exécutables](#construire-les-exécutables).
 
 ### Développement
 
@@ -83,13 +92,13 @@ Pour un poste ne disposant pas encore de PostgreSQL, un installateur autonome (`
 
 5. Créer les tables :
    ```bash
-   python test_connexion.py
+   python outils/test_connexion.py
    ```
 
 6. Initialiser les données de base (rôles + compte administrateur) :
    ```bash
-   python seed_roles.py
-   python seed_admin.py
+   python outils/seed/seed_roles.py
+   python outils/seed/seed_admin.py
    ```
 
 7. Lancer l'application :
@@ -100,11 +109,11 @@ Pour un poste ne disposant pas encore de PostgreSQL, un installateur autonome (`
 ## Construire les exécutables
 
 ```bash
-powershell -ExecutionPolicy Bypass -File rebuild_exe.ps1
-powershell -ExecutionPolicy Bypass -File rebuild_installateur.ps1
+powershell -ExecutionPolicy Bypass -File packaging\rebuild_exe.ps1
+powershell -ExecutionPolicy Bypass -File packaging\rebuild_installateur.ps1
 ```
 
-PyInstaller supprime et recrée entièrement `dist/ORMVAG-Meteo/` et `dist/Installateur-ORMVAG/` à chaque build (mode onedir) : ces deux scripts encapsulent l'appel à `pyinstaller ...spec --noconfirm` en sauvegardant puis restaurant ce qui n'est pas dans les `datas` du `.spec` et serait sinon perdu — `Rapports/`, `Sauvegardes/`, `.env` et le marqueur de tâche quotidienne pour le premier, le programme d'installation PostgreSQL embarqué (`installateur/bin/`, non versionné, ~370 Mo — voir `installateur/installer.py` pour l'URL de téléchargement) pour le second. Les deux se distribuent sous forme de dossiers (l'exécutable accompagné de `assets/`, `ML/`, `.env`, etc.), à l'image d'une application portable.
+PyInstaller supprime et recrée entièrement `dist/ORMVAG-Meteo/` et `dist/Installateur-ORMVAG/` à chaque build (mode onedir) : ces deux scripts encapsulent l'appel à `pyinstaller packaging/...spec --noconfirm` en sauvegardant puis restaurant ce qui n'est pas dans les `datas` du `.spec` et serait sinon perdu — `Rapports/`, `Sauvegardes/`, `.env` et le marqueur de tâche quotidienne pour le premier, le programme d'installation PostgreSQL embarqué (`packaging/installateur/bin/`, non versionné, ~370 Mo — voir `packaging/installateur/installer.py` pour l'URL de téléchargement) pour le second. Les deux se distribuent sous forme de dossiers (l'exécutable accompagné de `assets/`, `ML/`, `.env`, etc.), à l'image d'une application portable. Les deux scripts se repositionnent automatiquement sur la racine du dépôt, quel que soit le dossier depuis lequel ils sont lancés.
 
 ## Variables d'environnement
 
@@ -113,7 +122,7 @@ Voir `.env.example` pour la liste complète. Principales variables :
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | Chaîne de connexion PostgreSQL, format `postgresql://utilisateur:mot_de_passe@hote:port/nom_base` |
-| `ADMIN_SEED_PASSWORD` | (optionnel) Mot de passe à utiliser pour le compte admin créé par `seed_admin.py`. Si non défini, un mot de passe aléatoire est généré et affiché une seule fois. |
+| `ADMIN_SEED_PASSWORD` | (optionnel) Mot de passe à utiliser pour le compte admin créé par `outils/seed/seed_admin.py`. Si non défini, un mot de passe aléatoire est généré et affiché une seule fois. |
 | `SMTP_HOST`, `SMTP_PORT` | Serveur et port SMTP utilisés pour l'envoi des rapports par email (ex. `smtp.gmail.com`, `587`). |
 | `SMTP_USER`, `SMTP_PASSWORD` | Compte d'envoi et mot de passe. Pour Gmail, utiliser un [mot de passe d'application](https://myaccount.google.com/apppasswords) (2FA requise), jamais le mot de passe du compte. |
 | `SMTP_DESTINATAIRES` | Adresse(s) recevant les rapports, séparées par des virgules. Modifiable aussi depuis l'interface (page Paramètres). |
@@ -161,7 +170,7 @@ Le **LSTM** a été implémenté et branché à l'application (page dédiée **P
 
 ### Pipeline de données (scripts, à relancer manuellement si besoin)
 
-1. `importer_historique_excel.py <dossier>` — importe un historique météo pluriannuel depuis des exports Excel (une feuille par station, reconnue par nom ou par identifiant externe). Idempotent : ignore les dates déjà confirmées ("Mesuré") et les lignes de panne capteur (valeurs à 0 partout).
+1. `outils/importer_historique_excel.py <dossier>` — importe un historique météo pluriannuel depuis des exports Excel (une feuille par station, reconnue par nom ou par identifiant externe). Idempotent : ignore les dates déjà confirmées ("Mesuré") et les lignes de panne capteur (valeurs à 0 partout).
 2. `ML/diagnostic_qualite.py` — audite la qualité des données par station (trous, doublons, valeurs suspectes).
 3. `ML/nettoyer_donnees.py [--appliquer]` — supprime les mesures de panne capteur (dry-run par défaut).
 4. `ML/preparer_donnees_lstm.py` — construit les fenêtres d'entraînement du LSTM (segmentation aux trous > 7 jours, interpolation des petits trous, split train/val/test chronologique). Génère `donnees_lstm.npz` (~85 Mo, non versionné) et le petit fichier `parametres_lstm.npz` (versionné).

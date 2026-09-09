@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
 # Fichier de configuration PyInstaller pour ORMVAG Météo Manager.
-# Usage : pyinstaller ORMVAG-Meteo.spec
+# Usage (depuis la racine du depot) : pyinstaller packaging/ORMVAG-Meteo.spec
 #
 # Remplace la ligne de commande "pyinstaller --name ... --windowed --onefile main.py"
 # et fige la configuration pour que les prochains builds soient reproductibles
@@ -71,7 +71,7 @@ modules_exclus = [
 ]
 
 a = Analysis(
-    ["main.py"],
+    ["../main.py"],
     pathex=[],
     binaries=binaries_supplementaires,
     datas=[],
@@ -146,7 +146,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="assets/logo.ico",             # mettre le chemin d'un .ico ici si vous en avez un, ex: "assets/icone.ico"
+    icon="../assets/logo.ico",             # mettre le chemin d'un .ico ici si vous en avez un, ex: "assets/icone.ico"
 )
 
 coll = COLLECT(
