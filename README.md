@@ -139,7 +139,7 @@ Une tâche planifiée (`APScheduler`, `app/services/scheduler.py`) s'exécute ch
 
 Si l'application reste fermée à 8h00 (absence prolongée), la tâche est rattrapée au prochain démarrage : la fenêtre d'import s'élargit à la taille réelle de l'absence (plafonnée à 14 jours) et **un relevé distinct est généré et envoyé pour chaque jour manqué**, plutôt qu'un seul rapport pour le jour le plus récent.
 
-Sans configuration SMTP valide dans `.env`, les autres étapes continuent de fonctionner normalement — seul l'envoi de l'email échoue (erreur journalisée dans la console). Idem pour `pg_dump` absent : seule la sauvegarde échoue.
+Sans configuration SMTP valide dans `.env`, les autres étapes continuent de fonctionner normalement — seul l'envoi de l'email échoue (erreur journalisée dans `app.log`, l'application étant packagée sans console). Idem pour `pg_dump` absent : seule la sauvegarde échoue.
 
 ### Format du relevé des précipitations
 
@@ -161,7 +161,7 @@ Deux modèles entraînés sur l'historique météo des 14 stations (jusqu'à 10 
 
 | Modèle | Fichier | Rôle |
 |---|---|---|
-| LSTM multi-stations | `ML/modele_lstm.keras` + `ML/parametres_lstm.npz` | Prévoit la pluie, la température et l'ETo du lendemain à partir des 30 derniers jours de mesures. MAE sur jeu de test : ~1,9 mm (pluie), ~1,2°C (température), ~0,6 mm (ETo). |
+| LSTM multi-stations | `ML/modele_lstm.keras` + `ML/parametres_lstm.npz` | Prévoit la pluie, la température et l'ETo du lendemain à partir des 30 derniers jours de mesures. MAE sur jeu de test : 1,55 mm (pluie), 1,10°C (température), 0,62 mm (ETo). |
 | Isolation Forest | `ML/detecteur_anomalies.joblib` | Détecte les journées dont la combinaison de variables (température, humidité, pluie, vent...) est statistiquement atypique pour la station. |
 
 Seul l'**Isolation Forest** est intégré à l'application (page **Indicateurs**) : léger à charger, et il évalue les mesures du jour même, donc reste pertinent sans réentraînement fréquent.
@@ -182,7 +182,7 @@ Pour re-générer les modèles avec des données à jour, relancer les étapes 4
 D'autres scripts d'analyse ponctuelle complètent ce module, sans intégration à l'application : `ML/typologie_stations_saisons.py` (regroupement des stations par profil climatique, classification des campagnes agricoles par rapport à la normale) et `ML/correlation_stations.py` (corrélation de Pearson entre stations pour la pluie et la température, en complément de la typologie).
 
 **Limites connues**, à garder en tête pour toute interprétation des résultats :
-- Le modèle de pluie détecte bien *qu'il va pleuvoir* (rappel ~78-85 %) mais sous-estime souvent la *quantité* lors des épisodes pluvieux, et génère un nombre notable de fausses alertes (précision ~33-35 %) — se fier à la tendance plutôt qu'au chiffre exact.
+- Le modèle de pluie détecte bien *qu'il va pleuvoir* (rappel ~90 %) mais sous-estime souvent la *quantité* lors des épisodes pluvieux, et génère un nombre notable de fausses alertes (précision ~25-35 %) — se fier à la tendance plutôt qu'au chiffre exact.
 - Une architecture "hurdle" à deux modèles (occurrence + quantité) a été testée mais n'a pas surpassé le modèle de référence sur l'ensemble des métriques ; le modèle simple a été conservé.
 
 ## Historique des modifications
@@ -195,7 +195,7 @@ Toute création/modification de compte utilisateur, changement de rôle, activat
 - Changer le mot de passe administrateur par défaut après la première connexion.
 - Les fichiers de données réelles (`.sql`, `.xlsx`, `.csv`) ne sont pas versionnés — voir `.gitignore`.
 - Historique des modifications sur les comptes/rôles (voir section dédiée ci-dessus).
-- En exécutable packagé (sans console), une exception non interceptée est journalisée dans `erreur.log` (à côté de l'exécutable) et affichée à l'utilisateur, plutôt que de provoquer un blocage silencieux (`main.py`).
+- En exécutable packagé (sans console), une exception non interceptée est journalisée dans `erreur.log` (à côté de l'exécutable) et affichée à l'utilisateur, plutôt que de provoquer un blocage silencieux (`main.py`). Le déroulement normal de la tâche quotidienne (et les erreurs déjà interceptées) est journalisé séparément dans `app.log` (`app/utils/logger.py`).
 
 ## Licence
 
