@@ -39,7 +39,7 @@ def importer_fichier(chemin_fichier, log=print):
             station = Station(
                 nom=nettoyer_nom_station(nom_feuille),
                 code=f"REAL-{prochain_numero:02d}",
-                latitude=0, longitude=0, altitude=0,
+                latitude=0, longitude=0,
                 actif=True,
                 identifiant_externe=nom_feuille,
             )

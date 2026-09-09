@@ -7,8 +7,12 @@ Usage : venv\\Scripts\\python.exe voir_page.py rapports
         (nom du fichier dans app/views/, sans "_page.py")
 """
 import sys
+import inspect
 import importlib
 from PySide6.QtWidgets import QApplication
+from sqlalchemy.orm import joinedload
+from app.database import SessionLocal
+from app.models.user import User
 
 if len(sys.argv) != 2:
     print("Usage : python voir_page.py <nom_page>")
@@ -27,13 +31,24 @@ module = importlib.import_module(nom_module)
 classe_page = getattr(module, nom_classe)
 
 app = QApplication(sys.argv)
+
+# Depuis l'ajout du controle d'acces par role, la plupart des pages exigent
+# l'utilisateur connecte (pour savoir quelles actions d'ecriture activer) :
+# on se connecte avec le compte admin de la base si le constructeur en a besoin.
+if len(inspect.signature(classe_page.__init__).parameters) > 1:
+    session = SessionLocal()
+    utilisateur_test = session.query(User).options(joinedload(User.role)).filter_by(username="admin").first()
+    session.close()
+    args_page = (utilisateur_test,)
+else:
+    args_page = ()
 # Meme correctif que main.py, contre le theme sombre Windows sur les QMessageBox
 app.setStyleSheet("""
     QMessageBox { background-color: white; }
     QMessageBox QLabel { color: black; }
     QMessageBox QPushButton { color: black; background-color: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 4px; padding: 4px 14px; }
 """)
-fenetre = classe_page()
+fenetre = classe_page(*args_page)
 fenetre.setWindowTitle(f"Apercu autonome — {nom_classe}")
 fenetre.resize(1100, 750)
 fenetre.show()
