@@ -42,11 +42,12 @@ outils/                # Scripts de dev, jamais utilisés par l'app packagée
 ├── importer_historique_excel.py  #   Import d'historique météo pluriannuel depuis des exports Excel
 ├── test_connexion.py  #   Vérifie la connexion DB et crée les tables
 └── voir_page.py        #   Ouvre une seule page de l'app en fenêtre autonome
-packaging/              # Tout ce qui concerne la construction des exécutables
+packaging/              # Construction et installation des exécutables
 ├── ORMVAG-Meteo.spec / Installateur.spec
 ├── rebuild_exe.ps1 / rebuild_installateur.ps1
-└── installateur/       #   Installateur PostgreSQL autonome
-docs/                   # Documentation (INSTALLATION.txt, rapport de stage)
+├── installateur/       #   Installateur PostgreSQL autonome
+└── INSTALLATION.txt    #   Guide d'installation pour un poste utilisateur
+docs/                   # Documentation du projet (rapport de stage)
 assets/                 # Logo et icônes
 main.py                # Point d'entrée de l'application
 ```
