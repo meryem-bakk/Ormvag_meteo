@@ -13,7 +13,7 @@ from app.services.scheduler import demarrer_scheduler
 from app.utils.chemins import racine_projet
 from PySide6.QtGui import QIcon
 
-MODE_TEST_SANS_LOGIN = False  # Mettre à True pour ignorer l'écran de connexion et se connecter automatiquement avec l'utilisateur "admin"
+MODE_TEST_SANS_LOGIN = False  
 
 _RACINE_PROJET = racine_projet()
 
