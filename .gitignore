@@ -1,0 +1,32 @@
+venv/
+.env
+__pycache__/
+*.pyc
+exported_excel/
+Rapports/
+*.sql
+*.xlsx
+*.csv
+.vscode/
+*.code-workspace
+build/
+dist/
+arbre.txt
+.dernier_run_quotidien
+.cache_releve_reseau.json
+erreur.log
+app.log
+*.npz
+!ML/parametres_lstm.npz
+ML/*.keras
+!ML/modele_lstm.keras
+ML/*.joblib
+!ML/detecteur_anomalies.joblib
+ML/log_entrainement*.txt
+# Installeur PostgreSQL (~370 Mo) : telecharge manuellement, jamais commite (voir
+# packaging/installateur/installer.py pour l'URL officielle EnterpriseDB).
+packaging/installateur/bin/
+
+# Rapport de stage / support de soutenance : contiennent des captures d'ecran
+# avec des donnees de l'office, jamais commites.
+docs/STAGE PROFESIONNEL/
