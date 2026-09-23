@@ -1,10 +1,10 @@
 """Prévision météo à J+1 (pluie, température) par LSTM multi-stations.
 
 Le modèle est entraîné hors-ligne par ML/entrainer_lstm.py et sauvegardé dans
-ML/modele_lstm.keras (fichier non versionné, régénérable). Les paramètres de
-normalisation nécessaires à l'inférence sont dans ML/parametres_lstm.npz (petit
-fichier versionné). Si l'un des deux est absent, la prévision est indisponible
-sans erreur bloquante pour le reste de l'application.
+ML/modele_lstm.keras (fichier versionné). Les paramètres de normalisation
+nécessaires à l'inférence sont dans ML/parametres_lstm.npz (également
+versionné). Si l'un des deux est absent, la prévision est indisponible sans
+erreur bloquante pour le reste de l'application.
 """
 import math
 import os
