@@ -6,7 +6,7 @@ from app.models.mesure import Mesure
 from app.models.indicateur_journalier import IndicateurJournalier
 
 TEMP_BASE_GDD = 10  # température de base pour le calcul des degrés-jours (courant pour céréales)
-SEUIL_PLUIE_FORTE_MM = 30  # pluie journalière jugée forte - seuil provisoire, à valider avec le SED
+SEUIL_PLUIE_FORTE_MM = 30  # pluie journalière jugée forte
 
 # Un indicateur déjà calculé pour un jour antérieur à cette fenêtre est considéré
 # stable (les mesures "Mesuré" de cette période ne changent plus) : inutile de le
