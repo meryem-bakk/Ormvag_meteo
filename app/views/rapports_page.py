@@ -583,11 +583,14 @@ class RapportsPage(QWidget):
                 f"Charger l'aperçu interroge le site source pour les 14 stations, "
                 f"{nb_jours} fois (un par jour de la période) : ça peut prendre plusieurs minutes."
             )
-        reponse = QMessageBox.question(
-            self, "Charger l'aperçu ?", f"{message}\nContinuer ?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reponse != QMessageBox.Yes:
+        boite_confirmation = QMessageBox(self)
+        boite_confirmation.setWindowTitle("Charger l'aperçu ?")
+        boite_confirmation.setText(f"{message}\nContinuer ?")
+        boite_confirmation.setIcon(QMessageBox.Question)
+        bouton_oui = boite_confirmation.addButton("Oui", QMessageBox.AcceptRole)
+        boite_confirmation.addButton("Non", QMessageBox.RejectRole)
+        boite_confirmation.exec()
+        if boite_confirmation.clickedButton() is not bouton_oui:
             return
 
         if mode_jour_unique:

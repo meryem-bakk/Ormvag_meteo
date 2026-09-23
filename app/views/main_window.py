@@ -151,14 +151,18 @@ class MainWindow(QMainWindow):
 
         # Construction du modèle IA (Isolation Forest) potentiellement longue
         if index not in self._pages_construites and nom_page == "Indicateurs agroclimatiques":
-            reponse = QMessageBox.question(
-                self, "Ouvrir les indicateurs ?",
+            boite_confirmation = QMessageBox(self)
+            boite_confirmation.setWindowTitle("Ouvrir les indicateurs ?")
+            boite_confirmation.setText(
                 "Le calcul des indicateurs peut prendre quelques instants : construction du modèle IA "
                 "de détection d'anomalies (Isolation Forest) sur l'historique de toutes les stations.\n\n"
-                "Continuer ?",
-                QMessageBox.Yes | QMessageBox.No
+                "Continuer ?"
             )
-            if reponse != QMessageBox.Yes:
+            boite_confirmation.setIcon(QMessageBox.Question)
+            bouton_oui = boite_confirmation.addButton("Oui", QMessageBox.AcceptRole)
+            boite_confirmation.addButton("Non", QMessageBox.RejectRole)
+            boite_confirmation.exec()
+            if boite_confirmation.clickedButton() is not bouton_oui:
                 return
 
         self._mettre_a_jour_bouton_actif(bouton)

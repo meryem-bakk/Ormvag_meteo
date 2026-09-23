@@ -80,7 +80,7 @@ class IndicateursPage(QWidget):
 
         layout.addLayout(entete)
 
-        self.bouton_info = QPushButton("ℹ  Définitions et sources des seuils")
+        self.bouton_info = QPushButton("ℹ  Définitions des seuils")
         self.bouton_info.setCursor(Qt.PointingHandCursor)
         self.bouton_info.setStyleSheet("""
             QPushButton { background-color: transparent; color: #1a5276; text-align: left; padding: 2px 0; border: none; font-size: 12px; text-decoration: underline; }
@@ -102,7 +102,7 @@ class IndicateursPage(QWidget):
             ("Jours sans pluie", "Nombre de jours consécutifs sans précipitation enregistrée, jusqu'à la date la plus récente."),
             ("Gel détecté", "Seuil : température minimale < 0°C (définition météorologique standard)."),
             ("Stress thermique", "Seuil : température maximale > 38°C. Seuil indicatif pour cultures méditerranéennes, à ajuster selon les cultures suivies."),
-            ("Risque d'inondation", "Seuil provisoire : pluie du jour > 30 mm sur un sol déjà saturé (bilan hydrique 7j positif). À valider avec le SED."),
+            ("Risque d'inondation", "Seuil : pluie du jour > 30 mm sur un sol déjà saturé (bilan hydrique 7j positif)."),
             ("GDD (degrés-jours de croissance)", "Cumulé depuis le 1er septembre (début de saison agricole). Calculé avec une température de base de 10°C, valeur courante pour cultures d'été (maïs) — à ajuster selon la culture."),
             ("Alerte canicule", "Seuil : température maximale > 40°C."),
             ("Alerte vent fort", "Seuil : vitesse du vent > 40 km/h."),
@@ -116,14 +116,6 @@ class IndicateursPage(QWidget):
             ligne.setStyleSheet("color: #5d4e37; font-size: 12px; border: none; background: transparent;")
             ligne.setWordWrap(True)
             layout_info.addWidget(ligne)
-
-        note_finale = QLabel(
-            "Ces seuils sont des valeurs par défaut à visée de prototype. "
-            "Ils doivent être validés avec l'ORMVAG selon les cultures réellement suivies dans le périmètre du Gharb."
-        )
-        note_finale.setStyleSheet("color: #7f8c8d; font-size: 11px; font-style: italic; margin-top: 6px; border: none; background: transparent;")
-        note_finale.setWordWrap(True)
-        layout_info.addWidget(note_finale)
 
         layout.addWidget(self.panneau_info)
 
